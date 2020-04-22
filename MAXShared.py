@@ -1,5 +1,4 @@
 import tinydb
-import asyncio
 import functools
 
 global query

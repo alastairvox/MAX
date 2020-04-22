@@ -1,6 +1,18 @@
-# tinydb, asyncio, global variables
-from MAXShared import asyncio
+import asyncio
+import MAXShared
 import MAXDiscord
+
+# overloads print for this module so that all prints (hopefully all the sub functions that get called too) are appended with which service the prints came from
+print = MAXShared.printName(print, "MAIN:") 
+
+async def testFunction():
+    await MAXDiscord.bot.wait_until_ready()
+    try:
+        await MAXDiscord.say(ctx='DrawnActor', channel='general', notifyRole='none', message="Hello")
+    except Exception as exception:
+        print('Error: ' + repr(exception))
+    await asyncio.sleep(5)
+    await testFunction()
 
 def main():
     print("MAX is alive again.")
@@ -9,6 +21,7 @@ def main():
     loop = asyncio.get_event_loop()
     # schedules a task to run on the event loop next time the event loop checks for stuff, unless the event loop got closed!! (which is why we run forever, otherwise it wont even start them)
     loop.create_task(MAXDiscord.engage())
+    # loop.create_task(testFunction())
     # makes the event loop run forever (this is blocking), so any current and future scheduled tasks will run until we explicitly tell the loop to die with loop.stop()
     loop.run_forever()
 
