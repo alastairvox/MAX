@@ -188,7 +188,7 @@ async def on_ready():
 
 @bot.event
 async def on_command(ctx):
-    print('Command', '"'+ ctx.invoked_with +'"','invoked by', ctx.author.name + '#' + ctx.author.discriminator, '('+ str(ctx.author.id) +') on server', '"' + str(ctx.guild) + '".')
+    print('Command', '"'+ ctx.invoked_with +'"','invoked by', ctx.author.name + '#' + ctx.author.discriminator, '('+ str(ctx.author.id) +')', 'on server "' + str(ctx.guild) + '".' if not ctx.guild == None else 'in private message.')
 
 @bot.event
 async def on_command_error(ctx, error):
