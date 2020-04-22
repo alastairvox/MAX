@@ -141,7 +141,7 @@ bot = discord.ext.commands.Bot(command_prefix=getGuildPrefix, case_insensitive=T
 
 # starts the bot when called
 async def engage():
-    print("Engaging...")
+    print("Starting...")
     discordToken = authDB.get(query.name == 'discord')['devToken'] if dev else authDB.get(query.name == 'discord')['token']
     await bot.start(discordToken, reconnect=True)
 
