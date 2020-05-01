@@ -1,7 +1,7 @@
-import itertools, sys, traceback, asyncio, copy
+import itertools, sys, traceback, asyncio, copy, datetime, dateutil.parser, pytz, tinydb, tinydb.operations
 import discord, discord.ext.commands
-import MAXShared
-from MAXShared import query, authDB, configDB, dev
+import MAXShared, MAXTwitch
+from MAXShared import authDB, discordConfig, twitchConfig, query, dev
 
 # overloads print for this module so that all prints (hopefully all the sub functions that get called too) are appended with which service the prints came from
 print = MAXShared.printName(print, "DISCORD:")
@@ -14,8 +14,8 @@ print = MAXShared.printName(print, "DISCORD:")
 # ---------- SETUP ----------
 
 
-# gets the table/sub section of config for this service
-config = configDB.table('discord')
+# gets the table/subsection of config for this service
+config = discordConfig
 
 # get the prefix for commands for each message: no prefix in DM's, ! by default, or the prefix that server has configured
 def getGuildPrefix(bot, message):
@@ -81,12 +81,14 @@ class MAXHelpCommand(discord.ext.commands.DefaultHelpCommand):
         if bot.description:
             # <description> portion
             self.paginator.add_line(bot.description, empty=False)
-
+        
+        no_category = '\u200b{0.no_category}:'.format(self)
+        no_category += 'i have to "use" this fucking variable (even though it IS being used) or else i get a warning in my editor and i am neurotic'
         no_category = '\u200b{0.no_category}:'.format(self)
         def get_category(command, *, no_category=no_category):
             cog = command.cog
             return cog.qualified_name + ':' if cog is not None else no_category
-
+        
         filtered = await self.filter_commands(bot.commands, sort=True, key=get_category)
         max_size = self.get_max_size(filtered)
         to_iterate = itertools.groupby(filtered, key=get_category)
@@ -153,25 +155,27 @@ async def createFakeContext():
     return fakeContext
 
 # sends a message to a specified channel and notifies the specified role
-async def MAXMessageChannel(channel, role, message):
+async def MAXMessageChannel(channel, role, message, embed=None):
+    sent = None
     print('Sending message to "' + str(channel.guild) + '" in "' + str(channel) + '" and notifying "' + str(role) + '".')
     # cast to string in case it's a Role object which doesnt have a function for lower, Role object gives its name as a string when cast
     if role == None or str(role).lower() == 'none':
         # since Context is built from a Message, interally ctx.send() effectively uses channel.send() too
-        await channel.send(message)
+        sent = await channel.send(message, embed=embed)
     elif str(role).lower() == 'everyone':
-        await channel.send('@everyone' + message)
+        sent = await channel.send('@everyone ' + message, embed=embed)
     elif str(role).lower() == 'here':
-        await channel.send('@here' + message)
+        sent = await channel.send('@here ' + message, embed=embed)
     else:
         if role.mentionable:
-            await channel.send(role.mention + message)
+            sent = await channel.send(role.mention + ' ' + message, embed=embed)
         else:
             # shouldn't need to do this soon because of changes to mentionable roles permissions, but for now even though its technically changed it isnt for bots
             # https://www.reddit.com/r/discordapp/comments/f62o6f/role_mentions_from_administrators_will_now_ping/fi2hqra/
             await role.edit(mentionable=True, reason="Making mentionable to highlight message.")
-            await channel.send(role.mention + message)
+            sent = await channel.send(role.mention + ' ' + message, embed=embed)
             await role.edit(mentionable=False, reason="Sent message.")
+    return sent
 
 # add internal (boolean), originalCtx (Context), and userName (string)(only if not internal)
 # allows me to use converters easily from external commands and private messages
@@ -239,8 +243,186 @@ def configNewGuilds():
                 else:
                     guild.owner.create_dm()
                     defaultChannel = guild.owner.dm_channel
-            defaultConfig = {'guildID': guild.id, 'owner': guild.owner.id, 'ownerNames': [], 'botChannel': defaultChannel.id, 'announceChannel': defaultChannel.id, 'streamRole': 'everyone', 'useActivity': False, 'deleteAnnouncements': True, 'badInternet': False}
+            defaultConfig = {'guildID': guild.id, 'owner': guild.owner.id, 'ownerNames': [], 'botChannel': defaultChannel.id, 'announceChannel': defaultChannel.id, 'streamRole': 'everyone', 'prefix': '!', 'useActivity': False, 'deleteAnnouncements': False, 'badInternet': False, 'badInternetTime': 30, 'timeZone': 'US/Central'}
             config.upsert(defaultConfig, query.guildID == guild.id)
+
+async def makeAnnouncement(discordGuild, info, game):
+    # get info from config files
+    discordGuildConfig = config.get(query.guildID == discordGuild)
+    streamRole = discordGuildConfig['streamRole']
+    announceChannel = discordGuildConfig['announceChannel']
+    botChannel = discordGuildConfig['botChannel']
+    timeZone = discordGuildConfig['timeZone']
+    prefix = discordGuildConfig['prefix']
+    profileURL = twitchConfig.get(query.twitchChannel == info['user_name'].lower())['profileURL']
+
+    # get objects from discord api
+    guild = bot.get_guild(discordGuild)
+    streamRole = guild.get_role(streamRole)
+    announceChannel = guild.get_channel(announceChannel)
+    botChannel = guild.get_channel(botChannel)
+
+    # get date/convert date from UTC
+    date = dateutil.parser.parse(info['started_at'])
+    newTZ = pytz.timezone(timeZone)
+    newDate = date.replace(tzinfo=pytz.utc).astimezone(newTZ)
+    date = newTZ.normalize(newDate) # .normalize might be unnecessary
+    dateString = date.strftime("%#I:%M %p (%Z)")
+
+    # text content
+    message = "**" + info['user_name'] + " is live on Twitch!**\nIf you don't want these notifications, go to " + botChannel.mention + " and type ``" + prefix + "notify``."
+
+    # embed content
+    embed = discord.Embed()
+    embed.title = 'https://twitch.tv/' + info['user_name']
+    embed.url = embed.title
+    embed.colour = 6570404
+    embed.timestamp = date
+    embed.set_footer(text='Started')
+    embed.set_image(url=info['thumbnail_url'].replace('-{width}x{height}', ''))
+    embed.set_author(name=info['title'], url='https://twitch.tv/' + info['user_name'], icon_url=profileURL)
+    if game.get('box_art_url'):
+        embed.set_thumbnail(url=game['box_art_url'].replace('-{width}x{height}', '').replace('/ttv-boxart/./', '/ttv-boxart/'))
+    else:
+        embed.set_thumbnail(url='https://static-cdn.jtvnw.net/ttv-static/404_boxart.jpg')
+    embed.add_field(name='Started',value=dateString,inline=True)
+    embed.add_field(name='Playing',value=game['name'],inline=True)
+
+    sent = await MAXMessageChannel(announceChannel, streamRole, message, embed)
+
+    twitchConfig.update({'announcement' : sent.id}, (query.twitchChannel == info['user_name'].lower()) & (query.discordGuild == discordGuild))
+
+
+async def removeAnnouncement(discordGuild, announcement, twitchChannel):
+    # get info from discord config
+    discordGuildConfig = config.get(query.guildID == discordGuild)
+    announceChannel = discordGuildConfig['announceChannel']
+    timeZone = discordGuildConfig['timeZone']
+    deleteAnnouncements = discordGuildConfig['deleteAnnouncements']
+    badInternet = discordGuildConfig['badInternet']
+    badInternetTime = discordGuildConfig['badInternetTime']
+    # twitch config stuff
+    twitchChannelConfig = twitchConfig.get((query.twitchChannel == twitchChannel.lower()) & (query.discordGuild == discordGuild))
+    offlineURL = twitchChannelConfig['offlineURL']
+    announceSchedule = twitchChannelConfig['announceSchedule']
+    # get discord objects
+    guild = bot.get_guild(discordGuild)
+    announceChannel = guild.get_channel(announceChannel)
+
+    # get announcement message
+    announcement = await announceChannel.fetch_message(announcement)
+
+    if badInternet:
+        utcTZ = pytz.timezone('UTC')       
+        # if the stream hasn't had its end time stored yet ('ended' key does not exist)
+        if not twitchChannelConfig.get('ended'):
+            twitchConfig.update({'ended': str(datetime.datetime.now(utcTZ))}, (query.twitchChannel == twitchChannel.lower()) & (query.discordGuild == discordGuild))
+            print('Delaying removal due to badInternet flag on "' + guild.name + '".')
+            return
+        # else if the difference between now and the time the stream actually ended is less than 1 hour
+        elif (datetime.datetime.now(utcTZ) - dateutil.parser.parse(twitchChannelConfig.get('ended'))) < datetime.timedelta(minutes=badInternetTime):
+            return
+        # otherwise, continue and delete/edit the announcement
+
+    if deleteAnnouncements:
+        print('Removing announcement for ' + twitchChannel + '.')
+        await announcement.delete()
+    else:
+        announcement.content = announcement.content.replace('is live on Twitch!', 'is no longer live on Twitch.')
+
+        # get date/convert date from UTC
+        timeStarted = announcement.embeds[0].timestamp
+        newTZ = pytz.timezone(timeZone)
+        newTimeStarted = timeStarted.replace(tzinfo=pytz.utc).astimezone(newTZ)
+        timeStarted = newTZ.normalize(newTimeStarted) # .normalize might be unnecessary
+        if not twitchChannelConfig.get('ended'):
+            timeEnded = datetime.datetime.now(newTZ).strftime("%#I:%M %p (%Z)")
+            endedFooter = datetime.datetime.now(newTZ).strftime("%b %#d at %#I:%M %p (%Z)")
+            duration = datetime.datetime.now(newTZ) - timeStarted
+        else:
+            timeEnded = dateutil.parser.parse(twitchChannelConfig.get('ended'))
+            newTimeEnded = timeEnded.replace(tzinfo=pytz.utc).astimezone(newTZ)
+            timeEnded = newTZ.normalize(newTimeEnded).strftime("%#I:%M %p (%Z)") # .normalize might be unnecessary
+            endedFooter = newTZ.normalize(newTimeEnded).strftime("%b %#d at %#I:%M %p (%Z)")
+            duration = dateutil.parser.parse(twitchChannelConfig.get('ended')) - timeStarted
+
+        hours, remainder = divmod(duration.seconds, 3600)
+        minutes, seconds = divmod(remainder, 60)
+        duration = '{:2}h {:2}m {:2}s'.format(int(hours), int(minutes), int(seconds))
+        announcement.embeds[0].insert_field_at(index=1,name='Ended',value=timeEnded,inline=True)
+        announcement.embeds[0].insert_field_at(index=2,name='Duration',value=duration,inline=True)
+        announcement.embeds[0].set_field_at(index=3,name='Played',value=announcement.embeds[0].fields[3].value)
+        announcement.embeds[0].set_footer(text='Ended    •  ' + endedFooter + '\nStarted')
+        announcement.embeds[0].set_image(url=offlineURL.replace('-1920x1080', ''))
+
+        print('Editing announcement for ' + twitchChannel + ' to reflect offline state.')
+        await announcement.edit(content=announcement.content,embed=announcement.embeds[0])
+    
+    # update schedule
+    if announceSchedule[0] == 'always':
+        pass
+    else:
+        if announceSchedule[0] == 'once':
+            announceSchedule.pop(0)
+        # remove the schedule dates that have passed
+        newAnnounceSchedule = []
+        for entry in announceSchedule:
+            if dateutil.parser.parse(entry).date() >= datetime.date.today():
+                newAnnounceSchedule.append(entry)
+        announceSchedule = newAnnounceSchedule
+        if announceSchedule == []:
+            twitchConfig.remove((query.twitchChannel == twitchChannel.lower()) & (query.discordGuild == discordGuild))
+            return
+
+    # reset the announcement holder
+    twitchConfig.update({'announcement' : "none", 'announceSchedule': announceSchedule}, (query.twitchChannel == twitchChannel.lower()) & (query.discordGuild == discordGuild))
+    if twitchChannelConfig.get('ended'):
+        twitchConfig.update(tinydb.operations.delete('ended'), (query.twitchChannel == twitchChannel.lower()) & (query.discordGuild == discordGuild))
+
+async def sendAllConfig(ctx):
+    message = "**Server Configuration**\n"
+    for entry in config.all():
+        # ctx has already been modified to have ctx.guild replaced with the guild of the owner
+        if entry['guildID'] == ctx.guild.id:
+            for key in entry:
+                if key != 'botChannel' and key != 'announceChannel':
+                    message += key + ': ``'
+                
+                if key == 'guildID':
+                    message += ctx.guild.name
+                elif key == 'owner':
+                    converter = discord.ext.commands.UserConverter()
+                    message += str(await converter.convert(ctx, str(entry[key])))
+                elif key == 'botChannel' or key == 'announceChannel':
+                    converter = discord.ext.commands.TextChannelConverter()
+                    value = await converter.convert(ctx, str(entry[key]))
+                    message += key + ': ' + value.mention + '\n'
+                elif key == 'streamRole':
+                    converter = discord.ext.commands.RoleConverter()
+                    message += str(await converter.convert(ctx, str(entry[key])))
+                else:
+                    message += str(entry[key])
+                
+                if key != 'botChannel' and key != 'announceChannel':
+                    message += '``\n'
+            break
+    
+    message += "\n**Twitch Configuration**"
+    for entry in twitchConfig.all():
+        if entry['discordGuild'] == ctx.guild.id:
+            message += '\n'
+            for key in entry:
+                if key != "profileURL" and key != "offlineURL" and key != "discordGuild":
+                    if key == 'announcement' and entry[key] != 'none':
+                        converter = discord.ext.commands.MessageConverter()
+                        value = str(config.get(query.guildID == ctx.guild.id)['announceChannel']) + '-' + str(entry[key])
+                        value = await converter.convert(ctx, value)
+                        message += key + ': ' + value.jump_url + '\n'
+                    else:
+                        message += key + ': ``' + str(entry[key]) + '``\n'
+    
+    if ctx.internal:
+        await ctx.send(message)
 
 
 # ---------- EVENTS ----------
@@ -262,7 +444,10 @@ async def on_guild_join(guild):
 
 @bot.event
 async def on_command(ctx):
-    print('Command', '"'+ ctx.invoked_with +'"','invoked by', str(ctx.author), '('+ str(ctx.author.id) +')', 'on server "' + str(ctx.guild) + '".' if not ctx.guild == None else 'in private message.')
+    if hasattr(ctx, 'originalCtx'):
+        print('Command', '"'+ ctx.originalCtx.invoked_with +'"','invoked by', str(ctx.originalCtx.author), '('+ str(ctx.originalCtx.author.id) +')', 'on server "' + str(ctx.originalCtx.guild) + '".' if not ctx.originalCtx.guild == None else 'in private message.')
+    else:
+        print('Command', '"'+ ctx.invoked_with +'"','invoked by', str(ctx.author), '('+ str(ctx.author.id) +')', 'on server "' + str(ctx.guild) + '".' if not ctx.guild == None else 'in private message.')
 
 @bot.event
 async def on_command_error(ctx, error):
@@ -289,7 +474,12 @@ async def on_command_error(ctx, error):
     
     # Anything in ignored will return and prevent anything happening.
     if isinstance(error, ignored):
-        return
+        if isinstance(error, discord.ext.commands.CommandNotFound) and ctx.guild == None:
+            # because we want command not found errors to be sent in PM
+            await ctx.send('**' + type(error).__name__ + ' Error:** *' + str(error) + '*\nCommands in private messages do not use a prefix. Use ``help`` for more information on available commands.')
+            return
+        else:
+            return
 
     elif isinstance(error, discord.ext.commands.DisabledCommand):
         return await ctx.send(f'{ctx.command} has been disabled.')
@@ -325,19 +515,28 @@ async def on_command_error(ctx, error):
 
     **option:**
         The option you want to check or change (not case-sensitive):
+            ``all`` - all current server settings, including the state of all toggleable settings, and any twitch streams with their announce schedules.
             ``prefix`` - the prefix (``!``, ``.``, ``-``, etc) that you want MAX to use for commands on your server.
             ``owner`` - the user (name or ID) that you want to be allowed to configure MAX or access sensitive commands.
             ``botChannel`` - the channel (name or ID) you want MAX to tell people to use commands in (when making announcements, etc).
             ``announceChannel`` - the channel (name or ID) you want MAX to make announcements in.
             ``streamRole`` - the role (name or ID) that you want MAX to @ mention for announcements and give to users when they join the server (can also be ``everyone``, ``here``, or ``none``). Since MAX keeps roles internally by ID, you don't have to use this if you have only changed the name of your previous stream role: just when you want to change it to a different role object that already exists.
+            ``timeZone`` - the time zone you want MAX to use on announcements (defaults to US/Central). Must be from the following list: <https://gist.github.com/heyalexej/8bf688fd67d7199be4a1682b3eec7568>
     
     **value:**
         The new value for the specified option (case-sensitive). Don't include this in your command if you just want to check what it's currently set to.""")
 async def configure(ctx, option, value=None):
     ctx = await modifyContext(ctx)
 
-    option = option.lower()    
-    if option == 'prefix':
+    option = option.lower()
+    if option == 'all':
+        # print all settings
+        await sendAllConfig(ctx)
+        return
+    elif option == 'prefix':
+        converter = None
+    elif option == 'timezone':
+        option = 'timeZone'
         converter = None
     elif option == 'owner':
         converter = discord.ext.commands.UserConverter()
@@ -363,7 +562,14 @@ async def configure(ctx, option, value=None):
             await ctx.send(result)
         return
     
-    converted = await converter.convert(ctx, value)
+    if converter:
+        converted = await converter.convert(ctx, value)
+    elif option == 'timezone':
+        try:
+            pytz.timezone(value)
+        except pytz.exceptions.UnknownTimeZoneError:
+            raise discord.ext.commands.BadArgument(message="An invalid time zone was entered. Must be in the following list: <https://gist.github.com/heyalexej/8bf688fd67d7199be4a1682b3eec7568>")
+
     valueID = converted.id if converter else value
 
     config.update({option: valueID}, query.guildID == ctx.guild.id)
@@ -402,3 +608,36 @@ async def say(ctx, channel, notifyRole, *, message):
     if ctx.internal:
         await ctx.send(result)
     return True
+
+@bot.command(name='badinternet', help="""Toggles announce spam protection on/off, or provide a number to change delay length (default: 30).
+
+    **delay:**
+        The number of minutes after the stream goes offline before MAX will consider it actually ended. The stream won't be re-announced if it goes live again within this delay period and the announcement won't be edited or removed until the stream has been offline for this many minutes if badinternet mode is enabled (off by default). Don't provide a delay to toggle badinternet mode on and off.""")
+async def badinternet(ctx, delay:int=None):
+    ctx = await modifyContext(ctx)
+
+    if delay:
+        config.update({'badInternetTime': delay}, query.guildID == ctx.guild.id)
+        await ctx.send('Delay has been set to ' + str(delay) + ' minutes. badInternet mode is currently ' + ('enabled.' if config.get(query.guildID == ctx.guild.id)['badInternet'] else 'disabled.'))
+    else:
+        if config.get(query.guildID == ctx.guild.id)['badInternet']:
+            config.update({'badInternet': False}, query.guildID == ctx.guild.id)
+            await ctx.send('badInternet mode has been disabled.')
+        else:
+            config.update({'badInternet': True}, query.guildID == ctx.guild.id)
+            await ctx.send('badInternet mode has been enabled. Current delay is ' + str(config.get(query.guildID == ctx.guild.id)['badInternetTime']) + ' minutes.')
+
+@bot.command(name='twitch', help="""Add twitch streams to announce and their announcement schedules.
+
+    **channelName:**
+        The twitch stream to add or modify the schedule for. Don't specify ``schedule`` when adding a stream for the first time to use the default (which is ``always``) or to see the current schedule for the channel if you added it before. Don't specify ``channelName`` or ``schedule`` to see the current schedule for all streams you have added before.
+        
+    **schedule:**
+        The schedule to announce the stream on. You may specify any number of schedule options at once as long as each option is separated by a single comma. Providing an option that is already in the stream's schedule will remove that option from the stream's schedule, or remove the stream from the list if the schedule's empty. Valid options are:
+            ``remove`` - which will remove the channel from the list, the same as clearing its schedule.
+            ``always`` - which will announce the stream every time it goes live, regardless of other schedule options.
+            ``once`` - which will announce the stream the next time it goes live and then, if no additional schedule is set, will remove the channel from the list after it goes offline.
+            ``Mon``, ``Tue``, ``Wed``, ``Thu``, ``Fri``, ``Sat``, or ``Sun`` - which will announce the stream any time it goes live on the specified day each week.
+            an un-ambiguous date - like ``January 1 2021``, which will announce the stream any time it goes live on the specified day and then, if no additional schedule is set, will remove the channel from the list after it goes offline.""")
+async def twitch(ctx, channelName=None, *schedule):
+    pass
