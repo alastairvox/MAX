@@ -1,7 +1,7 @@
-import asyncio, datetime, traceback, dateutil.parser, tinydb, tinydb.operations, copy
+import asyncio, datetime, traceback, dateutil.parser, tinydb, tinydb.operations, copy, enum
 import twitchio, twitchio.ext.commands
 import MAXShared, MAXDiscord
-from MAXShared import authDB, discordConfig, twitchConfig, query, dev
+from MAXShared import authDB, discordConfig, twitchConfig, query, dev, dayNames
 
 # overloads print for this module so that all prints (hopefully all the sub functions that get called too) are appended with which service the prints came from
 print = MAXShared.printName(print, "TWITCH:")
@@ -26,7 +26,14 @@ for entry in discordConfig.all():
     for name in entry['ownerNames']:
         initialChannels.append(name)
 
-bot = twitchio.ext.commands.Bot(irc_token=twitchToken,client_id=twitchClientID,prefix="!",nick=twitchNick,initial_channels=initialChannels)
+# localHost = '192.168.50.62'
+# externalHost = '172.103.254.14'
+# port = '81'
+# callback = 'twitchcallback'
+
+# bot = twitchio.ext.commands.Bot(irc_token=twitchToken, client_id=twitchClientID, prefix="!", nick=twitchNick, initial_channels=initialChannels, webhook_server=True, local_host=localHost, external_host=externalHost, port=port, callback=callback)
+
+bot = twitchio.ext.commands.Bot(irc_token=twitchToken, client_id=twitchClientID, prefix="!", nick=twitchNick, initial_channels=initialChannels)
 
 
 # ---------- FUNCTIONS ----------
@@ -52,18 +59,17 @@ async def configNewChannel(channel):
 async def checkChannels():
     while True:
         try:
-            await asyncio.sleep(5)
+            await asyncio.sleep(7)
             await bot._ws.wait_until_ready()
             await MAXDiscord.bot.wait_until_ready()
 
             channelsToCheck = await getChannelsToCheck()
             if not channelsToCheck:
                 continue    # restarts the loop from the top (so waits, then checks again)
-            
             try:
                 response = await bot.get_streams(channels=channelsToCheck)
             except twitchio.errors.HTTPException as error:
-                print('HTTPException getting stream information: ' + error)
+                print('HTTPException getting stream information: ' + str(error))
                 continue
             else:
                 await notifyChannels(response)
@@ -74,7 +80,6 @@ async def checkChannels():
 async def getChannelsToCheck():
     channels = []
     entriesToRemove = []
-    dayNames = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
     # find every channel
     for entry in config.all():
         newAnnounceSchedule = copy.copy(entry['announceSchedule'])
@@ -191,10 +196,9 @@ async def event_command_error(ctx, error):
 async def event_ready():
     print(f'Connected as {bot.nick} to "' + '", "'.join(bot.initial_channels) + '"')
 
-# @bot.event
-# async def event_message(message):
-#     print(message.content)
-#     await bot.handle_commands(message)
+#@bot.event
+#async def event_webhook(data):
+#    print(data)
 
 
 # ---------- COMMANDS ----------
@@ -206,4 +210,9 @@ async def event_ready():
 
 @bot.command(name='test')
 async def test(ctx):
+    print('test')
+    await ctx.send(f'Hello {ctx.author.name}!')
+    print('test2')
+    await bot.modify_webhook_subscription(mode=twitchio.WebhookMode('subscribe'), topic=twitchio.webhook.StreamChanged(user_id=520858550), lease_seconds=864000)
+    print('test3')
     await ctx.send(f'Hello {ctx.author.name}!')

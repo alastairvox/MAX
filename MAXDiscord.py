@@ -1,7 +1,7 @@
 import itertools, sys, traceback, asyncio, copy, datetime, dateutil.parser, pytz, tinydb, tinydb.operations
 import discord, discord.ext.commands
 import MAXShared, MAXTwitch
-from MAXShared import authDB, discordConfig, twitchConfig, query, dev
+from MAXShared import authDB, discordConfig, twitchConfig, query, dev, dayNames, fullDayNames
 
 # overloads print for this module so that all prints (hopefully all the sub functions that get called too) are appended with which service the prints came from
 print = MAXShared.printName(print, "DISCORD:")
@@ -379,50 +379,66 @@ async def removeAnnouncement(discordGuild, announcement, twitchChannel):
     if twitchChannelConfig.get('ended'):
         twitchConfig.update(tinydb.operations.delete('ended'), (query.twitchChannel == twitchChannel.lower()) & (query.discordGuild == discordGuild))
 
-async def sendAllConfig(ctx):
-    message = "**Server Configuration**\n"
-    for entry in config.all():
-        # ctx has already been modified to have ctx.guild replaced with the guild of the owner
-        if entry['guildID'] == ctx.guild.id:
-            for key in entry:
-                if key != 'botChannel' and key != 'announceChannel':
-                    message += key + ': ``'
-                
-                if key == 'guildID':
-                    message += ctx.guild.name
-                elif key == 'owner':
-                    converter = discord.ext.commands.UserConverter()
-                    message += str(await converter.convert(ctx, str(entry[key])))
-                elif key == 'botChannel' or key == 'announceChannel':
-                    converter = discord.ext.commands.TextChannelConverter()
-                    value = await converter.convert(ctx, str(entry[key]))
-                    message += key + ': ' + value.mention + '\n'
-                elif key == 'streamRole':
-                    converter = discord.ext.commands.RoleConverter()
-                    message += str(await converter.convert(ctx, str(entry[key])))
-                else:
-                    message += str(entry[key])
-                
-                if key != 'botChannel' and key != 'announceChannel':
-                    message += '``\n'
-            break
-    
-    message += "\n**Twitch Configuration**"
-    for entry in twitchConfig.all():
-        if entry['discordGuild'] == ctx.guild.id:
-            message += '\n'
-            for key in entry:
-                if key != "profileURL" and key != "offlineURL" and key != "discordGuild":
-                    if key == 'announcement' and entry[key] != 'none':
-                        converter = discord.ext.commands.MessageConverter()
-                        value = str(config.get(query.guildID == ctx.guild.id)['announceChannel']) + '-' + str(entry[key])
-                        value = await converter.convert(ctx, value)
-                        message += key + ': ' + value.jump_url + '\n'
+async def sendAllConfig(ctx, mode):
+    message = ''
+    if mode == 'all' or mode == 'discord':
+        message += "**Server Configuration**\n"
+        for entry in config.all():
+            # ctx has already been modified to have ctx.guild replaced with the guild of the owner
+            if entry['guildID'] == ctx.guild.id:
+                for key in entry:
+                    if key != 'botChannel' and key != 'announceChannel':
+                        message += key + ': ``'
+                    
+                    if key == 'guildID':
+                        message += ctx.guild.name
+                    elif key == 'owner':
+                        converter = discord.ext.commands.UserConverter()
+                        message += str(await converter.convert(ctx, str(entry[key])))
+                    elif key == 'botChannel' or key == 'announceChannel':
+                        converter = discord.ext.commands.TextChannelConverter()
+                        value = await converter.convert(ctx, str(entry[key]))
+                        message += key + ': ' + value.mention + '\n'
+                    elif key == 'streamRole':
+                        converter = discord.ext.commands.RoleConverter()
+                        message += str(await converter.convert(ctx, str(entry[key])))
                     else:
-                        message += key + ': ``' + str(entry[key]) + '``\n'
+                        message += str(entry[key])
+                    
+                    if key != 'botChannel' and key != 'announceChannel':
+                        message += '``\n'
+                break
+    
+    if mode == 'all' or mode == 'twitch':
+        message += "\n**Twitch Configuration**"
+        for entry in twitchConfig.all():
+            if entry['discordGuild'] == ctx.guild.id:
+                message += '\n'
+                for key in entry:
+                    if key != "profileURL" and key != "offlineURL" and key != "discordGuild":
+                        if key == 'announcement' and entry[key] != 'none':
+                            converter = discord.ext.commands.MessageConverter()
+                            value = str(config.get(query.guildID == ctx.guild.id)['announceChannel']) + '-' + str(entry[key])
+                            value = await converter.convert(ctx, value)
+                            message += key + ': ' + value.jump_url + '\n'
+                        else:
+                            message += key + ': ``' + str(entry[key]) + '``\n'
     
     if ctx.internal:
         await ctx.send(message)
+
+async def sendTwitchChannelConfig(ctx, channel):
+    message = "\n**Twitch Channel Configuration**\n"
+    for key in channel:
+        if key != "profileURL" and key != "offlineURL" and key != "discordGuild":
+            if key == 'announcement' and channel[key] != 'none':
+                converter = discord.ext.commands.MessageConverter()
+                value = str(config.get(query.guildID == ctx.guild.id)['announceChannel']) + '-' + str(channel[key])
+                value = await converter.convert(ctx, value)
+                message += key + ': ' + value.jump_url + '\n'
+            else:
+                message += key + ': ``' + str(channel[key]) + '``\n'
+    await ctx.send(message)
 
 
 # ---------- EVENTS ----------
@@ -531,7 +547,7 @@ async def configure(ctx, option, value=None):
     option = option.lower()
     if option == 'all':
         # print all settings
-        await sendAllConfig(ctx)
+        await sendAllConfig(ctx, 'all')
         return
     elif option == 'prefix':
         converter = None
@@ -633,11 +649,105 @@ async def badinternet(ctx, delay:int=None):
         The twitch stream to add or modify the schedule for. Don't specify ``schedule`` when adding a stream for the first time to use the default (which is ``always``) or to see the current schedule for the channel if you added it before. Don't specify ``channelName`` or ``schedule`` to see the current schedule for all streams you have added before.
         
     **schedule:**
-        The schedule to announce the stream on. You may specify any number of schedule options at once as long as each option is separated by a single comma. Providing an option that is already in the stream's schedule will remove that option from the stream's schedule, or remove the stream from the list if the schedule's empty. Valid options are:
+        The schedule to announce the stream on. You may specify any number of schedule options at once as long as each option is separated by a single comma. If the stream has been added previously, the schedule options will be added to the previous schedule. Providing an option that is already in the stream's schedule will remove that option from the stream's schedule, or remove the stream from the list if the schedule's empty. Valid options are:
             ``remove`` - which will remove the channel from the list, the same as clearing its schedule.
             ``always`` - which will announce the stream every time it goes live, regardless of other schedule options.
             ``once`` - which will announce the stream the next time it goes live and then, if no additional schedule is set, will remove the channel from the list after it goes offline.
             ``Mon``, ``Tue``, ``Wed``, ``Thu``, ``Fri``, ``Sat``, or ``Sun`` - which will announce the stream any time it goes live on the specified day each week.
             an un-ambiguous date - like ``January 1 2021``, which will announce the stream any time it goes live on the specified day and then, if no additional schedule is set, will remove the channel from the list after it goes offline.""")
-async def twitch(ctx, channelName=None, *schedule):
-    pass
+async def twitch(ctx, channelName=None, *, schedule=None):
+    ctx = await modifyContext(ctx)
+    
+    if not channelName and not schedule:
+        await sendAllConfig(ctx, 'twitch')
+    elif channelName and not schedule:
+        channel = twitchConfig.get((query.twitchChannel == channelName.lower()) & (query.discordGuild == ctx.guild.id))
+        if not channel:
+            # not added yet, so add this channel with defaults
+            twitchConfig.upsert({"twitchChannel": channelName.lower(), "discordGuild": ctx.guild.id, "announceSchedule": ["always"], "profileURL": "", "offlineURL": "", "announcement": "none"}, (query.twitchChannel == channelName.lower()) & (query.discordGuild == ctx.guild.id))
+            channel = twitchConfig.get((query.twitchChannel == channelName.lower()) & (query.discordGuild == ctx.guild.id))
+            await ctx.send("Twitch channel ``" + channelName + "`` successfully added.")
+            await sendAllConfig(ctx, 'twitch')
+        else:
+            await sendTwitchChannelConfig(ctx, channel)
+    else:
+        # check schedule for valid options first
+        newSchedule = schedule.strip().split(',')
+        newSchedule = [option.lower() for option in newSchedule]
+        for i, entry in enumerate(newSchedule):
+            newSchedule[i] = entry.strip()
+
+        print(newSchedule)
+        announceSchedule = []
+        for option in newSchedule:
+            if option == 'remove' or option == 'always' or option == 'once':
+                continue
+            elif option in dayNames:
+                announceSchedule.append(option)
+            elif option in fullDayNames:
+                announceSchedule.append(dayNames[fullDayNames.index(option)])
+            else:
+                try:
+                    announceSchedule.append(dateutil.parser.parse(option).date().strftime("%B %#d %Y"))
+                except:
+                    raise discord.ext.commands.BadArgument(message="An invalid schedule option was provided.")
+        
+        channel = twitchConfig.get((query.twitchChannel == channelName.lower()) & (query.discordGuild == ctx.guild.id))
+        
+        if 'remove' in newSchedule:
+            # delete the channel
+            if not channel:
+                await ctx.send("Twitch channel ``" + channelName + "`` could not be removed as it has not been added yet.")
+                return
+            else:
+                twitchConfig.remove((query.twitchChannel == channelName.lower()) & (query.discordGuild == ctx.guild.id))
+                await ctx.send("Twitch channel ``" + channelName + "`` successfully removed.")
+                await sendAllConfig(ctx, 'twitch')
+                return
+        elif 'always' in newSchedule:
+            announceSchedule.insert(0, 'always')
+        elif 'once' in newSchedule:
+            announceSchedule.insert(0, 'once')
+        
+        if not channel:
+            # channel doesnt exist, add it with the specified schedule
+            twitchConfig.upsert({"twitchChannel": channelName.lower(), "discordGuild": ctx.guild.id, "announceSchedule": announceSchedule, "profileURL": "", "offlineURL": "", "announcement": "none"}, (query.twitchChannel == channelName.lower()) & (query.discordGuild == ctx.guild.id))
+            await ctx.send("Twitch channel ``" + channelName + "`` successfully added.")
+            await sendAllConfig(ctx, 'twitch')
+        else:
+            # update the schedule of the channel cause it already exists!! oh noooo
+            oldSchedule = channel['announceSchedule']
+            optionsToRemove = []
+            for option in announceSchedule:
+                if option in oldSchedule:
+                    optionsToRemove.append(option)
+            
+            if oldSchedule[0] == 'always' and 'once' in announceSchedule:
+                oldSchedule.remove('always')
+            elif oldSchedule[0] == 'once' and 'always' in announceSchedule:
+                oldSchedule.remove('once')
+            
+            for option in optionsToRemove:
+                announceSchedule.remove(option)
+                oldSchedule.remove(option)
+            
+            print(announceSchedule, optionsToRemove, oldSchedule)
+
+            announceSchedule += oldSchedule
+            if announceSchedule == []:
+                # everythings been removed from the schedule, so delete the entry instead
+                twitchConfig.remove((query.twitchChannel == channelName.lower()) & (query.discordGuild == ctx.guild.id))
+                await ctx.send("Twitch channel ``" + channelName + "`` removed as announce schedule is now empty.")
+                await sendAllConfig(ctx, 'twitch')
+            else:
+                if 'always' in announceSchedule:
+                    announceSchedule.remove('always')
+                    announceSchedule.insert(0, 'always')
+                elif 'once' in announceSchedule:
+                    announceSchedule.remove('once')
+                    announceSchedule.insert(0, 'once')
+                
+                twitchConfig.update({"announceSchedule": announceSchedule}, (query.twitchChannel == channelName.lower()) & (query.discordGuild == ctx.guild.id))
+                await ctx.send("Twitch channel ``" + channelName + "`` announce schedule successfully updated.")
+                channel = twitchConfig.get((query.twitchChannel == channelName.lower()) & (query.discordGuild == ctx.guild.id))
+                await sendTwitchChannelConfig(ctx, channel)
