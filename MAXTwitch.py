@@ -24,7 +24,8 @@ twitchNick = authDB.get(query.name == 'twitch')['devNick'] if not dev else authD
 initialChannels = []
 for entry in discordConfig.all():
     for name in entry['ownerNames']:
-        initialChannels.append(name)
+        if name not in initialChannels:
+            initialChannels.append(name)
 
 # localHost = '192.168.50.62'
 # externalHost = '172.103.254.14'

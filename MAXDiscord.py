@@ -243,7 +243,7 @@ def configNewGuilds():
                 else:
                     guild.owner.create_dm()
                     defaultChannel = guild.owner.dm_channel
-            defaultConfig = {'guildID': guild.id, 'owner': guild.owner.id, 'ownerNames': [], 'botChannel': defaultChannel.id, 'announceChannel': defaultChannel.id, 'streamRole': 'everyone', 'prefix': '!', 'useActivity': False, 'deleteAnnouncements': False, 'badInternet': False, 'badInternetTime': 30, 'timeZone': 'US/Central'}
+            defaultConfig = {'guildID': guild.id, 'owner': guild.owner.id, 'ownerNames': [], 'botChannel': defaultChannel.id, 'announceChannel': defaultChannel.id, 'streamRole': 'everyone', 'prefix': '!', 'useActivity': False, 'deleteAnnouncements': False, "giveStreamRoleOnJoin": True, 'badInternet': False, 'badInternetTime': 30, 'timeZone': 'US/Central'}
             config.upsert(defaultConfig, query.guildID == guild.id)
 
 async def makeAnnouncement(discordGuild, info, game):
@@ -254,11 +254,17 @@ async def makeAnnouncement(discordGuild, info, game):
     botChannel = discordGuildConfig['botChannel']
     timeZone = discordGuildConfig['timeZone']
     prefix = discordGuildConfig['prefix']
-    profileURL = twitchConfig.get(query.twitchChannel == info['user_name'].lower())['profileURL']
+    # twitch config
+    twitchChannelConfig = twitchConfig.get(query.twitchChannel == info['user_name'].lower())
+    profileURL = twitchChannelConfig['profileURL']
+    overrideRole = twitchChannelConfig.get('announceRole')
 
     # get objects from discord api
     guild = bot.get_guild(discordGuild)
-    streamRole = guild.get_role(streamRole)
+    if overrideRole:
+        streamRole = guild.get_role(overrideRole)
+    else:
+        streamRole = guild.get_role(streamRole)
     announceChannel = guild.get_channel(announceChannel)
     botChannel = guild.get_channel(botChannel)
 
@@ -399,11 +405,14 @@ async def sendAllConfig(ctx, mode):
                         converter = discord.ext.commands.TextChannelConverter()
                         value = await converter.convert(ctx, str(entry[key]))
                         message += key + ': ' + value.mention + '\n'
-                    elif key == 'streamRole':
+                    elif key == 'streamRole' and entry[key] != 'none' and entry[key] != 'everyone' and entry[key] != 'here':
                         converter = discord.ext.commands.RoleConverter()
                         message += str(await converter.convert(ctx, str(entry[key])))
                     else:
-                        message += str(entry[key])
+                        if type(entry[key]) == bool:
+                            message += 'Yes' if entry[key] else 'No'
+                        else:
+                            message += str(entry[key])
                     
                     if key != 'botChannel' and key != 'announceChannel':
                         message += '``\n'
@@ -421,6 +430,10 @@ async def sendAllConfig(ctx, mode):
                             value = str(config.get(query.guildID == ctx.guild.id)['announceChannel']) + '-' + str(entry[key])
                             value = await converter.convert(ctx, value)
                             message += key + ': ' + value.jump_url + '\n'
+                        elif key == 'announceRole' and entry[key] != 'none' and entry[key] != 'everyone' and entry[key] != 'here':
+                            converter = discord.ext.commands.RoleConverter()
+                            value = str(await converter.convert(ctx, str(entry[key])))
+                            message += key + ': ``' + value + '``\n'
                         else:
                             message += key + ': ``' + str(entry[key]) + '``\n'
     
@@ -518,6 +531,16 @@ async def on_command_error(ctx, error):
     # All other Errors not returned come here... And we can just print the default TraceBack.
     print('Ignoring exception in command {}:'.format(ctx.command), file=sys.stderr)
     traceback.print_exception(type(error), error, error.__traceback__, file=sys.stderr)
+
+@bot.event
+async def on_member_join(member):
+    guildConfig = config.get(query.guildID == member.guild.id)
+    enabled = guildConfig['giveStreamRoleOnJoin']
+    streamRole = guildConfig['streamRole']
+    if enabled and streamRole != 'none' and streamRole != 'everyone' and streamRole != 'here':
+        streamRole = member.guild.get_role(streamRole)
+        print('New member', str(member), '('+ str(member.id) +')', 'joined server "' + str(member.guild) + '", giving them role', str(streamRole), '(' + str(streamRole.id) + ').')
+        await member.add_roles(streamRole)
 
 
 # ---------- COMMANDS ----------
@@ -643,24 +666,43 @@ async def badinternet(ctx, delay:int=None):
             config.update({'badInternet': True}, query.guildID == ctx.guild.id)
             await ctx.send('badInternet mode has been enabled. Current delay is ' + str(config.get(query.guildID == ctx.guild.id)['badInternetTime']) + ' minutes.')
 
-@bot.command(name='twitch', help="""Add twitch streams to announce and their announcement schedules.
+@bot.command(name='joinrole', help="""Toggles whether MAX gives each new server member the stream role or not (default: on).""")
+async def joinrole(ctx):
+    ctx = await modifyContext(ctx)
+
+    if config.get(query.guildID == ctx.guild.id)['giveStreamRoleOnJoin']:
+        config.update({'giveStreamRoleOnJoin': False}, query.guildID == ctx.guild.id)
+        await ctx.send('giveStreamRoleOnJoin has been disabled.')
+    else:
+        config.update({'badInternet': True}, query.guildID == ctx.guild.id)
+        await ctx.send('giveStreamRoleOnJoin has been enabled. Current streamRole is: ' + str(ctx.guild.get_role(config.get(query.guildID == ctx.guild.id)['streamRole'])) + '.')
+
+
+@bot.command(name='twitch', help="""Add twitch streams to announce, per-stream announcement roles, and their announcement schedules.
 
     **channelName:**
-        The twitch stream to add or modify the schedule for. Don't specify ``schedule`` when adding a stream for the first time to use the default (which is ``always``) or to see the current schedule for the channel if you added it before. Don't specify ``channelName`` or ``schedule`` to see the current schedule for all streams you have added before.
+        The twitch stream to add or modify the schedule for. Don't specify any additional  options to see the current schedule for all streams you have added before. Don't specify a ``schedule`` when adding a stream for the first time to use the default schedule of ``always``. Don't specify an ``announceRole`` or a ``schedule`` when adding a stream for the first time to use the defaults (which is the server's streamRole and a schedule of ``always``). 
         
+    **announceRole:**
+        The role you want to notify when this stream goes live. This will override whatever the server's streamRole is set to when announcing the stream. Don't specify a ``schedule`` when using this option with a stream that has been added previously to only update the ``announceRole`` for that stream. Valid options are:
+            ``default`` - this will use the server's streamRole.
+            ``none`` - this will not notify anyone.
+            ``everyone`` or ``here`` - will notify users the same as @ mentioning their respective option.
+            ``a role name or ID`` - this will notify the specified role whenever the stream goes live.
+
     **schedule:**
         The schedule to announce the stream on. You may specify any number of schedule options at once as long as each option is separated by a single comma. If the stream has been added previously, the schedule options will be added to the previous schedule. Providing an option that is already in the stream's schedule will remove that option from the stream's schedule, or remove the stream from the list if the schedule's empty. Valid options are:
-            ``remove`` - which will remove the channel from the list, the same as clearing its schedule.
-            ``always`` - which will announce the stream every time it goes live, regardless of other schedule options.
-            ``once`` - which will announce the stream the next time it goes live and then, if no additional schedule is set, will remove the channel from the list after it goes offline.
-            ``Mon``, ``Tue``, ``Wed``, ``Thu``, ``Fri``, ``Sat``, or ``Sun`` - which will announce the stream any time it goes live on the specified day each week.
-            an un-ambiguous date - like ``January 1 2021``, which will announce the stream any time it goes live on the specified day and then, if no additional schedule is set, will remove the channel from the list after it goes offline.""")
-async def twitch(ctx, channelName=None, *, schedule=None):
+            ``remove`` - remove the channel from the list, the same as clearing its schedule.
+            ``always`` - announce the stream every time it goes live, regardless of other schedule options.
+            ``once`` - announce the stream the next time it goes live and then, if no additional schedule is set, will remove the channel from the list after it goes offline.
+            ``Mon``, ``Tue``, ``Wed``, ``Thu``, ``Fri``, ``Sat``, or ``Sun`` - announce the stream any time it goes live on the specified day each week.
+            ``an un-ambiguous date`` - like ``January 1 2021``: announce the stream any time it goes live on the specified day and then, if no additional schedule is set, will remove the channel from the list after it goes offline.""")
+async def twitch(ctx, channelName=None, announceRole=None, *, schedule=None):
     ctx = await modifyContext(ctx)
     
-    if not channelName and not schedule:
+    if not channelName and not announceRole and not schedule:
         await sendAllConfig(ctx, 'twitch')
-    elif channelName and not schedule:
+    elif channelName and not announceRole and not schedule:
         channel = twitchConfig.get((query.twitchChannel == channelName.lower()) & (query.discordGuild == ctx.guild.id))
         if not channel:
             # not added yet, so add this channel with defaults
@@ -670,14 +712,46 @@ async def twitch(ctx, channelName=None, *, schedule=None):
             await sendAllConfig(ctx, 'twitch')
         else:
             await sendTwitchChannelConfig(ctx, channel)
+    elif channelName and announceRole and not schedule:
+        channel = twitchConfig.get((query.twitchChannel == channelName.lower()) & (query.discordGuild == ctx.guild.id))
+        # get/check valid role on server
+        if announceRole != 'none' and announceRole != 'here' and announceRole != 'everyone' and announceRole != 'default':
+            converter = discord.ext.commands.RoleConverter()
+            announceRole = await converter.convert(ctx, announceRole)
+            announceRole = announceRole.id
+        if not channel:
+            # not added yet, so add this channel with defaults
+            if announceRole != 'default':
+                twitchConfig.upsert({"twitchChannel": channelName.lower(), "discordGuild": ctx.guild.id, "announceSchedule": ["always"], "profileURL": "", "offlineURL": "", "announcement": "none", "announceRole": announceRole}, (query.twitchChannel == channelName.lower()) & (query.discordGuild == ctx.guild.id))
+            else:
+                twitchConfig.upsert({"twitchChannel": channelName.lower(), "discordGuild": ctx.guild.id, "announceSchedule": ["always"], "profileURL": "", "offlineURL": "", "announcement": "none"}, (query.twitchChannel == channelName.lower()) & (query.discordGuild == ctx.guild.id))
+            channel = twitchConfig.get((query.twitchChannel == channelName.lower()) & (query.discordGuild == ctx.guild.id))
+            await ctx.send("Twitch channel ``" + channelName + "`` successfully added.")
+            await sendAllConfig(ctx, 'twitch')
+        else:
+            # already added, so just update the announceRole
+            if announceRole != 'default':
+                twitchConfig.upsert({"announceRole": announceRole}, (query.twitchChannel == channelName.lower()) & (query.discordGuild == ctx.guild.id))
+            else:
+                # user is asking to just use the default streamrole
+                if channel.get('announceRole'):
+                    twitchConfig.update(tinydb.operations.delete('announceRole'), (query.twitchChannel == channelName.lower()) & (query.discordGuild == ctx.guild.id))
+            channel = twitchConfig.get((query.twitchChannel == channelName.lower()) & (query.discordGuild == ctx.guild.id))
+            await ctx.send("Twitch channel ``" + channelName + "`` role successfully updated.")
+            await sendTwitchChannelConfig(ctx, channel)
     else:
-        # check schedule for valid options first
+        # get/check valid role on server
+        if announceRole != 'none' and announceRole != 'here' and announceRole != 'everyone' and announceRole != 'default':
+            converter = discord.ext.commands.RoleConverter()
+            announceRole = await converter.convert(ctx, announceRole)
+            announceRole = announceRole.id
+
+        # check schedule for valid options
         newSchedule = schedule.strip().split(',')
         newSchedule = [option.lower() for option in newSchedule]
         for i, entry in enumerate(newSchedule):
             newSchedule[i] = entry.strip()
 
-        print(newSchedule)
         announceSchedule = []
         for option in newSchedule:
             if option == 'remove' or option == 'always' or option == 'once':
@@ -711,7 +785,10 @@ async def twitch(ctx, channelName=None, *, schedule=None):
         
         if not channel:
             # channel doesnt exist, add it with the specified schedule
-            twitchConfig.upsert({"twitchChannel": channelName.lower(), "discordGuild": ctx.guild.id, "announceSchedule": announceSchedule, "profileURL": "", "offlineURL": "", "announcement": "none"}, (query.twitchChannel == channelName.lower()) & (query.discordGuild == ctx.guild.id))
+            if announceRole != 'default':
+                twitchConfig.upsert({"twitchChannel": channelName.lower(), "discordGuild": ctx.guild.id, "announceSchedule": announceSchedule, "profileURL": "", "offlineURL": "", "announcement": "none", "announceRole": announceRole}, (query.twitchChannel == channelName.lower()) & (query.discordGuild == ctx.guild.id))
+            else:
+                twitchConfig.upsert({"twitchChannel": channelName.lower(), "discordGuild": ctx.guild.id, "announceSchedule": announceSchedule, "profileURL": "", "offlineURL": "", "announcement": "none"}, (query.twitchChannel == channelName.lower()) & (query.discordGuild == ctx.guild.id))
             await ctx.send("Twitch channel ``" + channelName + "`` successfully added.")
             await sendAllConfig(ctx, 'twitch')
         else:
@@ -730,8 +807,6 @@ async def twitch(ctx, channelName=None, *, schedule=None):
             for option in optionsToRemove:
                 announceSchedule.remove(option)
                 oldSchedule.remove(option)
-            
-            print(announceSchedule, optionsToRemove, oldSchedule)
 
             announceSchedule += oldSchedule
             if announceSchedule == []:
@@ -747,7 +822,32 @@ async def twitch(ctx, channelName=None, *, schedule=None):
                     announceSchedule.remove('once')
                     announceSchedule.insert(0, 'once')
                 
-                twitchConfig.update({"announceSchedule": announceSchedule}, (query.twitchChannel == channelName.lower()) & (query.discordGuild == ctx.guild.id))
+                if announceRole != 'default':
+                    twitchConfig.update({"announceSchedule": announceSchedule, "announceRole": announceRole}, (query.twitchChannel == channelName.lower()) & (query.discordGuild == ctx.guild.id))
+                else:
+                    # user asking for the default stream role
+                    if channel.get('announceRole'):
+                        # stream had a custom role override set before so delete it
+                        twitchConfig.update(tinydb.operations.delete('announceRole'), (query.twitchChannel == channelName.lower()) & (query.discordGuild == ctx.guild.id))
+                    twitchConfig.update({"announceSchedule": announceSchedule}, (query.twitchChannel == channelName.lower()) & (query.discordGuild == ctx.guild.id))
                 await ctx.send("Twitch channel ``" + channelName + "`` announce schedule successfully updated.")
                 channel = twitchConfig.get((query.twitchChannel == channelName.lower()) & (query.discordGuild == ctx.guild.id))
                 await sendTwitchChannelConfig(ctx, channel)
+
+@bot.command(name='notify', help="""Toggles whether or not you receive stream notifications on this server.""")
+async def notify(ctx):
+    if ctx.guild == None:
+        raise discord.ext.commands.CheckFailure(message="This command cannot be used in private messages. You must use it on the server you wish to toggle your notification role on.")
+    else:
+        streamRole = config.get(query.guildID == ctx.guild.id)['streamRole']
+        if streamRole != 'none' and streamRole != 'everyone' and streamRole != 'here':
+            for role in ctx.author.roles:
+                if role.id == streamRole:
+                    await ctx.author.remove_roles(ctx.guild.get_role(streamRole))
+                    await ctx.send('You just lost your ' + str(ctx.guild.get_role(streamRole)) + " role. Have you ch-ch-checked your pockets? Sorry, that's not funny.")
+                    return
+            await ctx.author.add_roles(ctx.guild.get_role(streamRole))
+            await ctx.send("You're in the " + str(ctx.guild.get_role(streamRole)) + " now. T-t-tune in to the stream! The stream that's a *real* mind-blower!")
+            return
+        else:
+            raise discord.ext.commands.CheckFailure(message="This server does not have a stream role that can be toggled. The current stream role is: " + str(ctx.guild.get_role(streamRole)))
