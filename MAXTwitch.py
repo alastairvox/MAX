@@ -17,9 +17,9 @@ print = MAXShared.printName(print, "TWITCH:")
 # gets the table/subsection of config for this service
 config = twitchConfig
 
-twitchToken = authDB.get(query.name == 'twitch')['devToken'] if not dev else authDB.get(query.name == 'twitch')['token']
-twitchClientID = authDB.get(query.name == 'twitch')['devClientID'] if not dev else authDB.get(query.name == 'twitch')['clientID']
-twitchNick = authDB.get(query.name == 'twitch')['devNick'] if not dev else authDB.get(query.name == 'twitch')['nick']
+twitchToken = authDB.get(query.name == 'twitch')['devToken'] if dev else authDB.get(query.name == 'twitch')['token']
+twitchClientID = authDB.get(query.name == 'twitch')['devClientID'] if dev else authDB.get(query.name == 'twitch')['clientID']
+twitchNick = authDB.get(query.name == 'twitch')['devNick'] if dev else authDB.get(query.name == 'twitch')['nick']
 
 initialChannels = []
 for entry in discordConfig.all():
@@ -60,7 +60,7 @@ async def configNewChannel(channel):
 async def checkChannels():
     while True:
         try:
-            await asyncio.sleep(7)
+            await asyncio.sleep(30)
             await bot._ws.wait_until_ready()
             await MAXDiscord.bot.wait_until_ready()
 
