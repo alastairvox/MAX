@@ -5,7 +5,7 @@ import MAXTwitch
 
 # forces the stdout to flush constantly so that nssm can actually keep the logfile updated (nothing will show until after close, lost on crash otherwise)
 # does this by reopening the stdout as a writable binary with no buffering then wraps it in an io text wrapper?? and overwrites the default stdout
-sys.stdout = io.TextIOWrapper(open(sys.stdout.fileno(), 'wb', 0), write_through=True)
+sys.stdout = io.TextIOWrapper(open(sys.stdout.fileno(), 'wb', 0), write_through=True, errors="namereplace")
 
 # overloads print for this module so that all prints (hopefully all the sub functions that get called too) are appended with which service the prints came from
 print = MAXShared.printName(print, "MAIN:") 

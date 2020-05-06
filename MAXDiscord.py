@@ -7,11 +7,29 @@ from MAXShared import authDB, discordConfig, twitchConfig, query, dev, dayNames,
 print = MAXShared.printName(print, "DISCORD:")
 
 
-# ---------- SETUP ----------
-#
-#
-#
-# ---------- SETUP ----------
+
+# ---------- SETUP ------------------------------------------------------------------------------------------------------------
+#        #######                                               
+#      /       ###                                             
+#     /         ##              #                              
+#     ##        #              ##                              
+#      ###                     ##                              
+#     ## ###           /##   ######## ##   ####        /###    
+#      ### ###        / ### ########   ##    ###  /   / ###  / 
+#        ### ###     /   ###   ##      ##     ###/   /   ###/  
+#          ### /##  ##    ###  ##      ##      ##   ##    ##   
+#            #/ /## ########   ##      ##      ##   ##    ##   
+#             #/ ## #######    ##      ##      ##   ##    ##   
+#              # /  ##         ##      ##      ##   ##    ##   
+#    /##        /   ####    /  ##      ##      /#   ##    ##   
+#   /  ########/     ######/   ##       ######/ ##  #######    
+#  /     #####        #####     ##       #####   ## ######     
+#  |                                                ##         
+#   \)                                              ##         
+#                                                   ##         
+#                                                    ##        
+# ---------- SETUP ------------------------------------------------------------------------------------------------------------
+
 
 
 # gets the table/subsection of config for this service
@@ -134,12 +152,119 @@ description = "Ah, 'tis Max Headroom here, and I quote fro-fro-from the bard, Sh
 bot = discord.ext.commands.Bot(command_prefix=getGuildPrefix, case_insensitive=True, help_command=MAXHelpCommand(), description=description, fetch_offline_members=True)
 
 
-# ---------- FUNCTIONS ----------
-#
-#
-#
-# ---------- FUNCTIONS ----------
 
+# ---------- FUNCTIONS --------------------------------------------------------------------------------------------------------
+#       ##### ##                                                                                    
+#    ######  /### /                                           #                                     
+#   /#   /  /  ##/                                    #      ###                                    
+#  /    /  /    #                                    ##       #                                     
+#      /  /                                          ##                                             
+#     ## ##    ##   ####    ###  /###     /###     ######## ###       /###   ###  /###      /###    
+#     ## ##     ##    ###  / ###/ #### / / ###  / ########   ###     / ###  / ###/ #### /  / #### / 
+#     ## ###### ##     ###/   ##   ###/ /   ###/     ##       ##    /   ###/   ##   ###/  ##  ###/  
+#     ## #####  ##      ##    ##    ## ##            ##       ##   ##    ##    ##    ##  ####       
+#     ## ##     ##      ##    ##    ## ##            ##       ##   ##    ##    ##    ##    ###      
+#     #  ##     ##      ##    ##    ## ##            ##       ##   ##    ##    ##    ##      ###    
+#        #      ##      ##    ##    ## ##            ##       ##   ##    ##    ##    ##        ###  
+#    /####      ##      /#    ##    ## ###     /     ##       ##   ##    ##    ##    ##   /###  ##  
+#   /  #####     ######/ ##   ###   ### ######/      ##       ### / ######     ###   ### / #### /   
+#  /    ###       #####   ##   ###   ### #####        ##       ##/   ####       ###   ###   ###/    
+#  #                                                                                                
+#   ##                                                                                              
+# ---------- FUNCTIONS --------------------------------------------------------------------------------------------------------
+
+
+
+# delete the line with the role from the roleAssignMessage
+# clear the old emote's reactions from the message
+async def removeSelfAssignRole(roleMessage, role):
+    newMessage = ''
+    removeReaction = None
+    for line in roleMessage.content.splitlines():
+        if line != '':
+            tmp = line.replace('``', '', 1)
+            tmp = tmp.split('``: ')
+            if tmp[0] == str(role):
+                removeReaction = tmp[1]
+                continue
+            else:
+                newMessage += line
+        else:
+            newMessage += line
+    await roleMessage.edit(content=newMessage)
+    await roleMessage.clear_reaction(removeReaction)
+    return
+
+async def getSelfAssignRoles(roleMessage):
+    existingRoles = {}
+    for line in roleMessage.content.splitlines():
+        if line != '' and line != '**React to change your roles:**':
+            tmp = line.replace('``', '', 1)
+            tmp = tmp.split('``: ')
+            existingRoles[tmp[0]] = tmp[1]
+
+    return existingRoles
+
+# edit and add the new "role + emoji" and reaction to the message
+async def addSelfAssignRole(roleMessage, role, reaction):
+    message = roleMessage.content
+    message += '\n\n``' + str(role) + '``: ' + str(reaction.emoji)
+
+    await roleMessage.edit(content=message)
+    await roleMessage.add_reaction(reaction.emoji)
+
+# send a message to the orignal ctx channel and ask for the reaction
+# wait for the reaction for 60s
+    # reaction timeout: delete the message
+# once a reaction is made by the owner, check if the bot can use that reaction
+async def waitForReaction(ctx, role, wipingMessage=False):
+    if not wipingMessage:
+        monitorMessage = await ctx.send("React to this message with the emoji you want members to use to give themselves the ``" + str(role) + "`` role. This message will be deleted after 1 minute without a reaction.")
+    else:
+        # post a message asking for the reaction but also informing the user that if they provide a reaction the list of roles will be cleared and the message will be moved to the new channel they provided. if they did not mean to do this, then do not add a reaction to this message
+        monitorMessage = await ctx.send("There is already a self-assignable role message for your server. Reacting to this message will delete the old role message and clear the list of self-assignable roles, then make a new one in the channel you provided. If you didn't mean to do this, ignore this message and use the selfroles command again with just the ``role`` you want to add to the list.\n\nReact to this message with the emoji you want members to use to give themselves the ``" + str(role) + "`` role. This message will be deleted after 1 minute without a reaction.")
+    
+    ownerID = config.get(query.guildID == ctx.guild.id)['owner']
+    def check(reaction, user):
+        return user.id == ownerID and reaction.message.id == monitorMessage.id
+    
+    try:
+        reaction, user = await bot.wait_for('reaction_add', timeout=60.0, check=check)
+    except asyncio.TimeoutError:
+        await monitorMessage.delete()
+        return None
+    else:
+        # i dont like warnings about unused varaibles lol
+        user=user
+        if reaction.custom_emoji:
+            if not isinstance(reaction.emoji, discord.PartialEmoji):
+                if not reaction.emoji.is_usable():
+                    await ctx.send("I cannot use this emoji. You must react with an emoji I can use, such as a unicode emoji, default discord emoji, or a custom emoji from this server.")
+                    return await waitForReaction(ctx, role, wipingMessage)
+                else:
+                    return reaction
+            else:
+                converter = discord.ext.commands.EmojiConverter()
+                try:
+                    emoji = await converter.convert(ctx, reaction.emoji)
+                except Exception as error:
+                    print(error)
+                    await ctx.send("I cannot use this emoji. You must react with an emoji I can use, such as a unicode emoji, default discord emoji, or a custom emoji from this server.")
+                    return await waitForReaction(ctx, role, wipingMessage)
+                else:
+                    if emoji.is_usable():
+                        return reaction
+                    else:
+                        await ctx.send("I cannot use this emoji. You must react with an emoji I can use, such as a unicode emoji, default discord emoji, or a custom emoji from this server.")
+                        return await waitForReaction(ctx, role, wipingMessage)
+        else:
+            return reaction
+
+# creates a new self-assign role message and saves it to config, then returns the message object
+async def createNewSelfAssignMessage(ctx, roleChannel):
+    roleMessage = await roleChannel.send("**React to change your roles:**")
+    config.update({'roleAssignMessage': str(roleChannel.id) + '-' + str(roleMessage.id)}, query.guildID == ctx.guild.id)
+    return roleMessage
 
 # starts the bot when called
 async def engage():
@@ -454,12 +579,71 @@ async def sendTwitchChannelConfig(ctx, channel):
     await ctx.send(message)
 
 
-# ---------- EVENTS ----------
-#
-#
-#
-# ---------- EVENTS ----------
 
+# ---------- EVENTS -----------------------------------------------------------------------------------------------------------
+#       ##### ##                                                      
+#    ######  /### /                                                   
+#   /#   /  / ###/                                      #             
+#  /    /  /   ## ##                                   ##             
+#      /  /       ##                                   ##             
+#     ## ##        ##    ###      /##  ###  /###     ######## /###    
+#     ## ##         ##    ###    / ###  ###/ #### / ######## / #### / 
+#     ## ######     ##     ###  /   ###  ##   ###/     ##   ##  ###/  
+#     ## #####      ##      ## ##    ### ##    ##      ##  ####       
+#     ## ##         ##      ## ########  ##    ##      ##    ###      
+#     #  ##         ##      ## #######   ##    ##      ##      ###    
+#        /          ##      ## ##        ##    ##      ##        ###  
+#    /##/         / ##      /  ####    / ##    ##      ##   /###  ##  
+#   /  ##########/   ######/    ######/  ###   ###     ##  / #### /   
+#  /     ######       #####      #####    ###   ###     ##    ###/    
+#  #                                                                  
+#   ##                                                                
+# ---------- EVENTS -----------------------------------------------------------------------------------------------------------
+
+
+
+# on_raw_reaction_add(payload)
+@bot.event
+async def on_raw_reaction_add(payload):
+    roleGuild = bot.get_guild(payload.guild_id)
+    roleMember = roleGuild.get_member(payload.user_id)
+    if roleMember.id != bot.user.id:
+        roleMessage = config.get(query.roleAssignMessage == str(payload.channel_id) + '-' + str(payload.message_id))
+        if roleMessage:
+            roleChannel = roleGuild.get_channel(payload.channel_id)
+            roleMessage = await roleChannel.fetch_message(payload.message_id)
+            existingRoles = await getSelfAssignRoles(roleMessage)
+            for role, emoji in existingRoles.items():
+                if str(payload.emoji) == emoji:
+                    ctx = await createFakeContext()
+                    ctx.guild = roleGuild
+                    converter = discord.ext.commands.RoleConverter()
+                    role = await converter.convert(ctx, role)
+                    print('Giving self-assign role "' + str(role) + '" to user ' + str(roleMember) + ' (' + str(roleMember.id) + ') on server "' + str(roleGuild) + '".')
+                    await roleMember.add_roles(role)
+                    break
+    return
+
+@bot.event
+async def on_raw_reaction_remove(payload):
+    roleGuild = bot.get_guild(payload.guild_id)
+    roleMember = roleGuild.get_member(payload.user_id)
+    if roleMember.id != bot.user.id:
+        roleMessage = config.get(query.roleAssignMessage == str(payload.channel_id) + '-' + str(payload.message_id))
+        if roleMessage:
+            roleChannel = roleGuild.get_channel(payload.channel_id)
+            roleMessage = await roleChannel.fetch_message(payload.message_id)
+            existingRoles = await getSelfAssignRoles(roleMessage)
+            for role, emoji in existingRoles.items():
+                if str(payload.emoji) == emoji:
+                    ctx = await createFakeContext()
+                    ctx.guild = roleGuild
+                    converter = discord.ext.commands.RoleConverter()
+                    role = await converter.convert(ctx, role)
+                    print('Removing self-assign role "' + str(role) + '" from user ' + str(roleMember) + ' (' + str(roleMember.id) + ') on server "' + str(roleGuild) + '".')
+                    await roleMember.remove_roles(role)
+                    break
+    return
 
 @bot.event
 async def on_ready():
@@ -543,12 +727,129 @@ async def on_member_join(member):
         await member.add_roles(streamRole)
 
 
-# ---------- COMMANDS ----------
-#
-#
-#
-# ---------- COMMANDS ----------
 
+# ---------- COMMANDS ---------------------------------------------------------------------------------------------------------
+#        # ###                                                                       ##             
+#      /  /###  /                                                                     ##            
+#     /  /  ###/                                                                      ##            
+#    /  ##   ##                                                                       ##            
+#   /  ###                                                                            ##            
+#  ##   ##          /###   ### /### /###   ### /### /###     /###   ###  /###     ### ##    /###    
+#  ##   ##         / ###  / ##/ ###/ /##  / ##/ ###/ /##  / / ###  / ###/ #### / ######### / #### / 
+#  ##   ##        /   ###/   ##  ###/ ###/   ##  ###/ ###/ /   ###/   ##   ###/ ##   #### ##  ###/  
+#  ##   ##       ##    ##    ##   ##   ##    ##   ##   ## ##    ##    ##    ##  ##    ## ####       
+#  ##   ##       ##    ##    ##   ##   ##    ##   ##   ## ##    ##    ##    ##  ##    ##   ###      
+#   ##  ##       ##    ##    ##   ##   ##    ##   ##   ## ##    ##    ##    ##  ##    ##     ###    
+#    ## #      / ##    ##    ##   ##   ##    ##   ##   ## ##    ##    ##    ##  ##    ##       ###  
+#     ###     /  ##    ##    ##   ##   ##    ##   ##   ## ##    /#    ##    ##  ##    /#  /###  ##  
+#      ######/    ######     ###  ###  ###   ###  ###  ### ####/ ##   ###   ###  ####/   / #### /   
+#        ###       ####       ###  ###  ###   ###  ###  ### ###   ##   ###   ###  ###       ###/    
+# ---------- COMMANDS ---------------------------------------------------------------------------------------------------------
+
+
+
+@bot.command(name='selfroles', help="""Toggles user self-assignable roles, add roles and their reaction emojis, and change the role channel.
+
+    Don't provide a ``role`` or ``roleChannel`` to disable self-assignable roles and clear the list of roles.
+
+    **role:**
+        The role name or ID to add. If you have added the specified role previously, then it will be removed from the list instead. After you add a role, react to the follow-up message with the reaction you want members to use to be granted the role.
+    
+    **roleChannel:**
+        The channel to put the self-assignable role message in. Do not provide this option unless you want to change what channel the self assignable role message is in and reset the list to include only the role/reaction you provided.""")
+async def selfroles(ctx, role=None, roleChannel=None):
+    ctx = await modifyContext(ctx)
+
+    #if no options specified
+    if not role and not roleChannel:
+        # if the post has been made already, delete it
+        roleMessage = config.get(query.guildID == ctx.guild.id)
+        roleMessage = roleMessage.get('roleAssignMessage')
+        if roleMessage:
+            config.update(tinydb.operations.delete('roleAssignMessage'), query.guildID == ctx.guild.id)
+            converter = discord.ext.commands.MessageConverter()
+            roleMessage = await converter.convert(ctx, roleMessage)
+            await roleMessage.delete()
+            await ctx.send('The self-assignable role message has been deleted and the list of self-assignable roles has been cleared.')
+            return
+        # if the post hasnt been made, do nothing - say that theres no post yet
+        else:
+            await ctx.send('No message has been created yet. Please specify both a ``role`` and ``channel`` to create the self-assignable role message.')
+            return
+    elif role and not roleChannel:
+        # check/get valid role object
+        converter = discord.ext.commands.RoleConverter()
+        role = await converter.convert(ctx, role)
+
+        roleMessage = config.get(query.guildID == ctx.guild.id)
+        roleMessage = roleMessage.get('roleAssignMessage')
+        if not roleMessage:
+            raise discord.ext.commands.BadArgument(message="You must specify a ``channel`` for the first role you add in order to create the self-assignable role message. No message has been created to add a role to yet.")
+        else:
+            converter = discord.ext.commands.MessageConverter()
+            roleMessage = await converter.convert(ctx, roleMessage)
+            existingRoles = await getSelfAssignRoles(roleMessage)
+            if str(role) in existingRoles:
+                # delete the line with the role from the roleAssignMessage
+                # clear the old emote's reactions from the message
+                await removeSelfAssignRole(roleMessage, role)
+                # let them know its been removed
+                await ctx.send('The role ``' + str(role) + '`` has been removed from the list of self-assignable roles.')
+                return
+            else:
+                # send a message to the orignal ctx channel and ask for the reaction
+                # wait for the reaction for 60s
+                    # reaction timeout: delete the message
+                # once a reaction is made by the owner, check if the bot can use that reaction
+                reaction = await waitForReaction(ctx, role)
+                # edit the roleAssignMessage to add the "role + emoji" to the channel
+                # react to the message with the same reaction
+                await addSelfAssignRole(roleMessage, role, reaction)
+                # let them know you are done
+                await ctx.send('The role ``' + str(role) + '`` has been successfully added to the list of self-assignable roles.')
+                return
+    else:
+        roleMessage = config.get(query.guildID == ctx.guild.id)
+        roleMessage = roleMessage.get('roleAssignMessage')
+
+        converter = discord.ext.commands.RoleConverter()
+        role = await converter.convert(ctx, role)
+
+        converter = discord.ext.commands.TextChannelConverter()
+        roleChannel = await converter.convert(ctx, roleChannel)
+
+        if roleMessage:
+        # if role message already exists
+            # post a message asking for the reaction but also informing the user that if they provide a reaction the list of roles will be cleared and the message will be moved to the new channel they provided. if they did not mean to do this, then do not add a reaction to this message
+            # wait for and validate usable reaction
+            reaction = await waitForReaction(ctx, role, True)
+            if not reaction:
+                return
+            # delete old message
+            converter = discord.ext.commands.MessageConverter()
+            roleMessage = await converter.convert(ctx, roleMessage)
+            await roleMessage.delete()
+            # post new message + put message id into config
+            roleMessage = await createNewSelfAssignMessage(ctx, roleChannel)
+            # edit and add the new "role + emoji" and reaction to the new message
+            await addSelfAssignRole(roleMessage, role, reaction)
+            # inform user that old message cleared, new message created in channel, role added
+            await ctx.send('The old self-assignable role message has been deleted and the list of self-assignable roles has been cleared. The new self-assignable role message has been created in '+ roleChannel.mention +' and the role ``' + str(role) + '`` has been successfully added to the list.')
+            return
+        else:
+        # if role message doesn't exist 
+            # post message asking for reaction
+            # wait for and validate usable reaction
+            reaction = await waitForReaction(ctx, role)
+            if not reaction:
+                return
+            # post new message + put message id into config
+            roleMessage = await createNewSelfAssignMessage(ctx, roleChannel)
+            # edit and add the new "role + emoji" and reaction to the new message
+            await addSelfAssignRole(roleMessage, role, reaction)
+            # inform user message created and role added
+            await ctx.send('The self-assignable role message has been created in '+ roleChannel.mention +' and the role ``' + str(role) + '`` has been successfully added to the list.')
+            return
 
 @bot.command(name='configure', help="""Check or change MAX options like announcement channel, command prefix, stream role, etc.
 

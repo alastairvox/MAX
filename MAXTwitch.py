@@ -20,6 +20,7 @@ config = twitchConfig
 twitchToken = authDB.get(query.name == 'twitch')['devToken'] if dev else authDB.get(query.name == 'twitch')['token']
 twitchClientID = authDB.get(query.name == 'twitch')['devClientID'] if dev else authDB.get(query.name == 'twitch')['clientID']
 twitchNick = authDB.get(query.name == 'twitch')['devNick'] if dev else authDB.get(query.name == 'twitch')['nick']
+twitchClientSecret = authDB.get(query.name == 'twitch')['devClientSecret'] if dev else authDB.get(query.name == 'twitch')['clientSecret']
 
 initialChannels = []
 for entry in discordConfig.all():
@@ -34,7 +35,7 @@ for entry in discordConfig.all():
 
 # bot = twitchio.ext.commands.Bot(irc_token=twitchToken, client_id=twitchClientID, prefix="!", nick=twitchNick, initial_channels=initialChannels, webhook_server=True, local_host=localHost, external_host=externalHost, port=port, callback=callback)
 
-bot = twitchio.ext.commands.Bot(irc_token=twitchToken, client_id=twitchClientID, prefix="!", nick=twitchNick, initial_channels=initialChannels)
+bot = twitchio.ext.commands.Bot(irc_token=twitchToken, client_id=twitchClientID, prefix="!", nick=twitchNick, initial_channels=initialChannels, client_secret=twitchClientSecret)
 
 
 # ---------- FUNCTIONS ----------
