@@ -1,7 +1,7 @@
 import itertools, sys, traceback, asyncio, copy, datetime, dateutil.parser, pytz, tinydb, tinydb.operations
 import discord, discord.ext.commands
-import MAXShared, MAXTwitch
-from MAXShared import authDB, discordConfig, twitchConfig, query, dev, dayNames, fullDayNames
+import MAXShared, MAXTwitch, MAXServer, MAXYoutube
+from MAXShared import auth, youtubeConfig, discordConfig, twitchConfig, query, devFlag, dayNames, fullDayNames, specialRoles
 
 # overloads print for this module so that all prints (hopefully all the sub functions that get called too) are appended with which service the prints came from
 print = MAXShared.printName(print, "DISCORD:")
@@ -269,7 +269,7 @@ async def createNewSelfAssignMessage(ctx, roleChannel):
 # starts the bot when called
 async def engage():
     print("Starting...")
-    discordToken = authDB.get(query.name == 'discord')['devToken'] if dev else authDB.get(query.name == 'discord')['token']
+    discordToken = auth.get(query.name == 'discord')['devToken'] if devFlag else auth.get(query.name == 'discord')['token']
     await bot.start(discordToken, reconnect=True)
 
 # creates and returns a fake context for calling commands externally
@@ -530,7 +530,7 @@ async def sendAllConfig(ctx, mode):
                         converter = discord.ext.commands.TextChannelConverter()
                         value = await converter.convert(ctx, str(entry[key]))
                         message += key + ': ' + value.mention + '\n'
-                    elif key == 'streamRole' and entry[key] != 'none' and entry[key] != 'everyone' and entry[key] != 'here':
+                    elif key == 'streamRole' and entry[key] not in specialRoles:
                         converter = discord.ext.commands.RoleConverter()
                         message += str(await converter.convert(ctx, str(entry[key])))
                     else:
@@ -555,13 +555,21 @@ async def sendAllConfig(ctx, mode):
                             value = str(config.get(query.guildID == ctx.guild.id)['announceChannel']) + '-' + str(entry[key])
                             value = await converter.convert(ctx, value)
                             message += key + ': ' + value.jump_url + '\n'
-                        elif key == 'announceRole' and entry[key] != 'none' and entry[key] != 'everyone' and entry[key] != 'here':
+                        elif key == 'announceRole' and entry[key] not in specialRoles:
                             converter = discord.ext.commands.RoleConverter()
                             value = str(await converter.convert(ctx, str(entry[key])))
                             message += key + ': ``' + value + '``\n'
                         else:
                             message += key + ': ``' + str(entry[key]) + '``\n'
     
+    if mode == 'all' or mode == 'youtube':
+        message += "\n**YouTube Configuration**"
+        for entry in youtubeConfig.all():
+            if entry['discordGuild'] == ctx.guild.id:
+                message += '\n'
+                for key in entry:
+                    message += key + ': ``' + str(entry[key]) + '``\n'
+
     if ctx.internal:
         await ctx.send(message)
 
@@ -721,7 +729,7 @@ async def on_member_join(member):
     guildConfig = config.get(query.guildID == member.guild.id)
     enabled = guildConfig['giveStreamRoleOnJoin']
     streamRole = guildConfig['streamRole']
-    if enabled and streamRole != 'none' and streamRole != 'everyone' and streamRole != 'here':
+    if enabled and streamRole not in specialRoles:
         streamRole = member.guild.get_role(streamRole)
         print('New member', str(member), '('+ str(member.id) +')', 'joined server "' + str(member.guild) + '", giving them role', str(streamRole), '(' + str(streamRole.id) + ').')
         await member.add_roles(streamRole)
@@ -746,6 +754,41 @@ async def on_member_join(member):
 #        ###       ####       ###  ###  ###   ###  ###  ### ###   ##   ###   ###  ###       ###/    
 # ---------- COMMANDS ---------------------------------------------------------------------------------------------------------
 
+
+
+@bot.command(name='youtube')
+async def youtube(ctx, youtubeChannel=None, announceChannel=None, notifyRole=None):
+    ctx = await modifyContext(ctx)
+
+    youtubeChannel = 'UCGPBgBHGdmr1VSaK_3Oitqw'
+
+    if not announceChannel:
+        announceChannel = 'default'
+    if not notifyRole:
+        notifyRole = 'default'
+
+    if announceChannel != 'default':
+        converter = discord.ext.commands.TextChannelConverter()
+        announceChannel = await converter.convert(ctx, announceChannel)
+        announceChannel = announceChannel.id
+    if notifyRole not in specialRoles:
+        converter = discord.ext.commands.RoleConverter()
+        notifyRole = await converter.convert(ctx, notifyRole)
+        notifyRole = notifyRole.id
+
+    youtubeConfig.upsert({'discordGuild': ctx.guild.id, 'channelID': youtubeChannel, 'announceChannel': announceChannel, 'notifyRole': notifyRole}, (query.discordGuild == ctx.guild.id) & (query.channelID == youtubeChannel))
+
+    responseStatus = await MAXYoutube.subscribeYoutubeUploads(ctx.guild.id, youtubeChannel)
+    if responseStatus == 202:
+        channelText = ctx.guild.get_channel(announceChannel).mention if announceChannel != 'default' else 'the default announcement channel'
+        announceText = ctx.guild.get_role(notifyRole).mention if notifyRole not in specialRoles else notifyRole
+        await ctx.send('Successfully registered ' + youtubeChannel + ' for announcements in ' + channelText + ' and notifying ``' + announceText + '``.')
+        await sendAllConfig(ctx, 'youtube')
+    else:
+        await ctx.send('Error ' + responseStatus + ' when attempting to get ' + youtubeChannel + ' from YouTube. Make sure you have provided a valid YouTube channel ID (like ``UC_0hyh6_G3Ct1k1EiqaorqQ``).')
+        youtubeConfig.remove((query.discordGuild == ctx.guild.id) & (query.channelID == youtubeChannel))
+        await sendAllConfig(ctx, 'youtube')
+    
 
 
 @bot.command(name='selfroles', help="""Toggles user self-assignable roles, add roles and their reaction emojis, and change the role channel.
@@ -1016,7 +1059,7 @@ async def twitch(ctx, channelName=None, announceRole=None, *, schedule=None):
     elif channelName and announceRole and not schedule:
         channel = twitchConfig.get((query.twitchChannel == channelName.lower()) & (query.discordGuild == ctx.guild.id))
         # get/check valid role on server
-        if announceRole != 'none' and announceRole != 'here' and announceRole != 'everyone' and announceRole != 'default':
+        if announceRole not in specialRoles:
             converter = discord.ext.commands.RoleConverter()
             announceRole = await converter.convert(ctx, announceRole)
             announceRole = announceRole.id
@@ -1042,7 +1085,7 @@ async def twitch(ctx, channelName=None, announceRole=None, *, schedule=None):
             await sendTwitchChannelConfig(ctx, channel)
     else:
         # get/check valid role on server
-        if announceRole != 'none' and announceRole != 'here' and announceRole != 'everyone' and announceRole != 'default':
+        if announceRole not in specialRoles:
             converter = discord.ext.commands.RoleConverter()
             announceRole = await converter.convert(ctx, announceRole)
             announceRole = announceRole.id
@@ -1141,7 +1184,7 @@ async def notify(ctx):
         raise discord.ext.commands.CheckFailure(message="This command cannot be used in private messages. You must use it on the server you wish to toggle your notification role on.")
     else:
         streamRole = config.get(query.guildID == ctx.guild.id)['streamRole']
-        if streamRole != 'none' and streamRole != 'everyone' and streamRole != 'here':
+        if streamRole not in specialRoles:
             for role in ctx.author.roles:
                 if role.id == streamRole:
                     await ctx.author.remove_roles(ctx.guild.get_role(streamRole))

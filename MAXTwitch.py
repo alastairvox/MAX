@@ -1,26 +1,44 @@
 import asyncio, datetime, traceback, dateutil.parser, tinydb, tinydb.operations, copy, enum
 import twitchio, twitchio.ext.commands
-import MAXShared, MAXDiscord
-from MAXShared import authDB, discordConfig, twitchConfig, query, dev, dayNames
+import MAXShared, MAXDiscord, MAXServer
+from MAXShared import auth, discordConfig, twitchConfig, query, devFlag, dayNames
 
 # overloads print for this module so that all prints (hopefully all the sub functions that get called too) are appended with which service the prints came from
 print = MAXShared.printName(print, "TWITCH:")
 
 
-# ---------- SETUP ----------
-#
-#
-#
-# ---------- SETUP ----------
+
+# ---------- SETUP ------------------------------------------------------------------------------------------------------------
+#        #######                                               
+#      /       ###                                             
+#     /         ##              #                              
+#     ##        #              ##                              
+#      ###                     ##                              
+#     ## ###           /##   ######## ##   ####        /###    
+#      ### ###        / ### ########   ##    ###  /   / ###  / 
+#        ### ###     /   ###   ##      ##     ###/   /   ###/  
+#          ### /##  ##    ###  ##      ##      ##   ##    ##   
+#            #/ /## ########   ##      ##      ##   ##    ##   
+#             #/ ## #######    ##      ##      ##   ##    ##   
+#              # /  ##         ##      ##      ##   ##    ##   
+#    /##        /   ####    /  ##      ##      /#   ##    ##   
+#   /  ########/     ######/   ##       ######/ ##  #######    
+#  /     #####        #####     ##       #####   ## ######     
+#  |                                                ##         
+#   \)                                              ##         
+#                                                   ##         
+#                                                    ##        
+# ---------- SETUP ------------------------------------------------------------------------------------------------------------
+
 
 
 # gets the table/subsection of config for this service
 config = twitchConfig
 
-twitchToken = authDB.get(query.name == 'twitch')['devToken'] if dev else authDB.get(query.name == 'twitch')['token']
-twitchClientID = authDB.get(query.name == 'twitch')['devClientID'] if dev else authDB.get(query.name == 'twitch')['clientID']
-twitchNick = authDB.get(query.name == 'twitch')['devNick'] if dev else authDB.get(query.name == 'twitch')['nick']
-twitchClientSecret = authDB.get(query.name == 'twitch')['devClientSecret'] if dev else authDB.get(query.name == 'twitch')['clientSecret']
+twitchToken = auth.get(query.name == 'twitch')['devToken'] if devFlag else auth.get(query.name == 'twitch')['token']
+twitchClientID = auth.get(query.name == 'twitch')['devClientID'] if devFlag else auth.get(query.name == 'twitch')['clientID']
+twitchNick = auth.get(query.name == 'twitch')['devNick'] if devFlag else auth.get(query.name == 'twitch')['nick']
+twitchClientSecret = auth.get(query.name == 'twitch')['devClientSecret'] if devFlag else auth.get(query.name == 'twitch')['clientSecret']
 
 initialChannels = []
 for entry in discordConfig.all():
@@ -38,11 +56,27 @@ for entry in discordConfig.all():
 bot = twitchio.ext.commands.Bot(irc_token=twitchToken, client_id=twitchClientID, prefix="!", nick=twitchNick, initial_channels=initialChannels, client_secret=twitchClientSecret)
 
 
-# ---------- FUNCTIONS ----------
-#
-#
-#
-# ---------- FUNCTIONS ----------
+
+# ---------- FUNCTIONS --------------------------------------------------------------------------------------------------------
+#       ##### ##                                                                                    
+#    ######  /### /                                           #                                     
+#   /#   /  /  ##/                                    #      ###                                    
+#  /    /  /    #                                    ##       #                                     
+#      /  /                                          ##                                             
+#     ## ##    ##   ####    ###  /###     /###     ######## ###       /###   ###  /###      /###    
+#     ## ##     ##    ###  / ###/ #### / / ###  / ########   ###     / ###  / ###/ #### /  / #### / 
+#     ## ###### ##     ###/   ##   ###/ /   ###/     ##       ##    /   ###/   ##   ###/  ##  ###/  
+#     ## #####  ##      ##    ##    ## ##            ##       ##   ##    ##    ##    ##  ####       
+#     ## ##     ##      ##    ##    ## ##            ##       ##   ##    ##    ##    ##    ###      
+#     #  ##     ##      ##    ##    ## ##            ##       ##   ##    ##    ##    ##      ###    
+#        #      ##      ##    ##    ## ##            ##       ##   ##    ##    ##    ##        ###  
+#    /####      ##      /#    ##    ## ###     /     ##       ##   ##    ##    ##    ##   /###  ##  
+#   /  #####     ######/ ##   ###   ### ######/      ##       ### / ######     ###   ### / #### /   
+#  /    ###       #####   ##   ###   ### #####        ##       ##/   ####       ###   ###   ###/    
+#  #                                                                                                
+#   ##                                                                                              
+# ---------- FUNCTIONS --------------------------------------------------------------------------------------------------------
+
 
 
 # monkey patching :D
@@ -52,6 +86,10 @@ twitchio.ext.commands.Bot.global_before_hook = new_global_before_hook
 
 # starts the bot when called
 async def engage():
+    print("Starting...")
+    loop = asyncio.get_event_loop()
+    loop.create_task(checkChannels())
+    # loop.create_task(MAXServer.twitchWS())
     await bot.start()
 
 # called when told to join a new channel, sets up defaults (creates an entry for that channel)
@@ -61,7 +99,10 @@ async def configNewChannel(channel):
 async def checkChannels():
     while True:
         try:
-            await asyncio.sleep(30)
+            if devFlag:
+                await asyncio.sleep(7)
+            else:
+                await asyncio.sleep(30)
             await bot._ws.wait_until_ready()
             await MAXDiscord.bot.wait_until_ready()
 
@@ -181,11 +222,28 @@ async def leave(ctx):
     # bot.part_channels(channelList)
     pass
 
-# ---------- EVENTS ----------
-#
-#
-#
-# ---------- EVENTS ----------
+
+
+# ---------- EVENTS -----------------------------------------------------------------------------------------------------------
+#       ##### ##                                                      
+#    ######  /### /                                                   
+#   /#   /  / ###/                                      #             
+#  /    /  /   ## ##                                   ##             
+#      /  /       ##                                   ##             
+#     ## ##        ##    ###      /##  ###  /###     ######## /###    
+#     ## ##         ##    ###    / ###  ###/ #### / ######## / #### / 
+#     ## ######     ##     ###  /   ###  ##   ###/     ##   ##  ###/  
+#     ## #####      ##      ## ##    ### ##    ##      ##  ####       
+#     ## ##         ##      ## ########  ##    ##      ##    ###      
+#     #  ##         ##      ## #######   ##    ##      ##      ###    
+#        /          ##      ## ##        ##    ##      ##        ###  
+#    /##/         / ##      /  ####    / ##    ##      ##   /###  ##  
+#   /  ##########/   ######/    ######/  ###   ###     ##  / #### /   
+#  /     ######       #####      #####    ###   ###     ##    ###/    
+#  #                                                                  
+#   ##                                                                
+# ---------- EVENTS -----------------------------------------------------------------------------------------------------------
+
 
 
 @bot.event
@@ -203,11 +261,25 @@ async def event_ready():
 #    print(data)
 
 
-# ---------- COMMANDS ----------
-#
-#
-#
-# ---------- COMMANDS ----------
+
+# ---------- COMMANDS ---------------------------------------------------------------------------------------------------------
+#        # ###                                                                       ##             
+#      /  /###  /                                                                     ##            
+#     /  /  ###/                                                                      ##            
+#    /  ##   ##                                                                       ##            
+#   /  ###                                                                            ##            
+#  ##   ##          /###   ### /### /###   ### /### /###     /###   ###  /###     ### ##    /###    
+#  ##   ##         / ###  / ##/ ###/ /##  / ##/ ###/ /##  / / ###  / ###/ #### / ######### / #### / 
+#  ##   ##        /   ###/   ##  ###/ ###/   ##  ###/ ###/ /   ###/   ##   ###/ ##   #### ##  ###/  
+#  ##   ##       ##    ##    ##   ##   ##    ##   ##   ## ##    ##    ##    ##  ##    ## ####       
+#  ##   ##       ##    ##    ##   ##   ##    ##   ##   ## ##    ##    ##    ##  ##    ##   ###      
+#   ##  ##       ##    ##    ##   ##   ##    ##   ##   ## ##    ##    ##    ##  ##    ##     ###    
+#    ## #      / ##    ##    ##   ##   ##    ##   ##   ## ##    ##    ##    ##  ##    ##       ###  
+#     ###     /  ##    ##    ##   ##   ##    ##   ##   ## ##    /#    ##    ##  ##    /#  /###  ##  
+#      ######/    ######     ###  ###  ###   ###  ###  ### ####/ ##   ###   ###  ####/   / #### /   
+#        ###       ####       ###  ###  ###   ###  ###  ### ###   ##   ###   ###  ###       ###/    
+# ---------- COMMANDS ---------------------------------------------------------------------------------------------------------
+
 
 
 @bot.command(name='test')
@@ -215,6 +287,4 @@ async def test(ctx):
     print('test')
     await ctx.send(f'Hello {ctx.author.name}!')
     print('test2')
-    await bot.modify_webhook_subscription(mode=twitchio.WebhookMode('subscribe'), topic=twitchio.webhook.StreamChanged(user_id=520858550), lease_seconds=864000)
-    print('test3')
-    await ctx.send(f'Hello {ctx.author.name}!')
+    await MAXServer.subscribeTwitchTopic()
