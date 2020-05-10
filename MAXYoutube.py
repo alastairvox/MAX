@@ -60,9 +60,52 @@ config = youtubeConfig
 
 
 async def subscribeYoutubeUploads(discordGuild, channel):
-    async with MAXServer.session.post('https://pubsubhubbub.appspot.com/subscribe?hub.callback=http://172.103.254.14:81/youtube/' + str(discordGuild) + '&hub.topic=https://www.youtube.com/xml/feeds/videos.xml?channel_id=' + channel + '&hub.verify=async&hub.mode=subscribe') as resp:
-        print('Requested youtube subscription to ' + channel + ' for guild ' + discordGuild + '. Received status: ' + resp.status)
+    async with MAXServer.session.post('https://pubsubhubbub.appspot.com/subscribe?hub.callback=' + generalConfig.get(query.name == 'callback')['value'] + 'youtube/' + str(discordGuild) + '&hub.topic=https://www.youtube.com/xml/feeds/videos.xml?channel_id=' + channel + '&hub.verify=async&hub.mode=subscribe') as resp:
+        print('Subscription request to youtube channel ' + channel + ' for guild ' + str(discordGuild) + ' completed with status ' + str(resp.status))
         return resp.status
+
+async def getAllYoutubeUploads(channel):
+    token = auth.get(query.name == 'youtube')['token']
+    params = {'part': 'contentDetails', 'id': channel, 'key': token}
+    async with MAXServer.session.get('https://www.googleapis.com/youtube/v3/channels', params=params) as resp:
+        print('Beginning requests to collect all youtube videos for ' + channel + '. Requested upload playlist id, received status: ' + str(resp.status))
+        if resp.status != 200:
+            return resp.status
+        else:
+            data = await resp.json()
+            data = data.get('items')
+            if not data:
+                print('Error - No items in response - channel likely doesnt exist.')
+                return "channel likely doesnt exist"
+            uploadPlaylist = data[0]['contentDetails']['relatedPlaylists'].get('uploads')
+            if not uploadPlaylist:
+                print('Error - Channel does not have an uploads playlist?')
+                return "channel has no uploads playlist"
+            else:
+                # now we get playlist items/videos, loop until we don't have anymore pages
+                params = {'part': 'contentDetails', 'maxResults': 50, 'playlistId': uploadPlaylist, 'key': token}
+                async with MAXServer.session.get('https://www.googleapis.com/youtube/v3/playlistItems', params=params) as resp:
+                    if resp.status != 200:
+                        return resp.status
+                    else:
+                        data = await resp.json()
+                        videoList = []
+                        nextPage = data.get('nextPageToken')
+                        for video in data['items']:
+                            videoList.append(video['contentDetails']['videoId'])
+                        while nextPage:
+                            params = {'part': 'contentDetails', 'maxResults': 50, 'pageToken': nextPage, 'playlistId': uploadPlaylist, 'key': token}
+                            async with MAXServer.session.get('https://www.googleapis.com/youtube/v3/playlistItems', params=params) as resp:
+                                if resp.status != 200:
+                                    return resp.status
+                                else:
+                                    data = await resp.json()
+                                    nextPage = data.get('nextPageToken')
+                                    for video in data['items']:
+                                        videoList.append(video['contentDetails']['videoId'])
+                        config.update({'announcedVideos': videoList}, query.channelID == channel)
+                        print('Finished requests for', channel, 'videos. Inserted', len(videoList), 'videos into config.')
+                        return resp.status
 
 
 

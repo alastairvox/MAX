@@ -1,4 +1,4 @@
-import itertools, sys, traceback, asyncio, copy, datetime, dateutil.parser, pytz, tinydb, tinydb.operations
+import itertools, sys, traceback, asyncio, copy, datetime, dateutil.parser, pytz, tinydb, tinydb.operations, lxml.etree
 import discord, discord.ext.commands
 import MAXShared, MAXTwitch, MAXServer, MAXYoutube
 from MAXShared import auth, youtubeConfig, discordConfig, twitchConfig, query, devFlag, dayNames, fullDayNames, specialRoles
@@ -173,6 +173,66 @@ bot = discord.ext.commands.Bot(command_prefix=getGuildPrefix, case_insensitive=T
 #   ##                                                                                              
 # ---------- FUNCTIONS --------------------------------------------------------------------------------------------------------
 
+
+
+async def announceYoutubeUpload(guildID, xmlBytes):
+    tree = lxml.etree.fromstring(xmlBytes)
+    if tree.find('entry', tree.nsmap) is None:
+        print('Ignoring deleted YouTube video.')
+        return
+    # store a copy of the youtube video number so i dont re-announce youtube videos if they just get updated, have to parse the xml of the text out for relevant bits
+    videoID = tree.find('entry/yt:videoId', tree.nsmap).text
+    channelID = tree.find('entry/yt:channelId', tree.nsmap).text
+    videoTitle = tree.find('entry/title', tree.nsmap).text
+    videoURL = tree.find('entry/link', tree.nsmap).get('href')
+    channelName = tree.find('entry/author/name', tree.nsmap).text
+
+    youtubeChannelConfig = youtubeConfig.get((query.discordGuild == guildID) & (query.channelID == channelID))
+    if not youtubeChannelConfig:
+        print('There is no entry associated with', guildID, 'and', channelID, 'so video', videoURL, 'will be ignored.')
+        return
+    else:
+        announcedVideos = youtubeChannelConfig.get('announcedVideos')
+        if announcedVideos and videoID in announcedVideos:
+            print('Video', videoURL, 'has already been announced in', guildID, 'so it will be ignored.')
+            return
+        elif announcedVideos:
+            announcedVideos.append(videoID)
+        else:
+            announcedVideos = [videoID]
+        youtubeConfig.update({'announcedVideos': announcedVideos}, (query.discordGuild == guildID) & (query.channelID == channelID))
+    
+    # get info from config files
+    discordGuildConfig = config.get(query.guildID == guildID)
+    streamRole = discordGuildConfig['streamRole']
+    announceChannel = discordGuildConfig['announceChannel']
+    botChannel = discordGuildConfig['botChannel']
+    prefix = discordGuildConfig['prefix']
+    # youtube config
+    overrideChannel = youtubeChannelConfig.get('notifyRole')
+    overrideRole = youtubeChannelConfig.get('notifyRole')
+
+    # get objects from discord api
+    guild = bot.get_guild(guildID)
+    if overrideRole:
+        if overrideRole != 'default' and overrideRole != streamRole:
+            # use overrideRole instead
+            streamRole = overrideRole
+    if streamRole not in specialRoles:
+        streamRole = guild.get_role(streamRole)
+    
+    if overrideChannel:
+        if overrideChannel != 'default' and overrideChannel != announceChannel:
+            # use overrideChannel instead
+            announceChannel = overrideChannel
+    announceChannel = guild.get_channel(announceChannel)
+    botChannel = guild.get_channel(botChannel)
+
+    # pass the text (xml, xml.etree.ElementTree?) and guildID to a discord function that parses out the author name, video title, URL (<link rel="alternate" href="), and the time published and then announces the stream if it finds a matching entry
+    print('announcing', guildID, videoURL)
+    # text content
+    message = "**" + channelName + " posted a video!**\nIf you don't want these notifications, go to " + botChannel.mention + " and type ``" + prefix + "notify``.\n**" + videoTitle + "** - " + videoURL
+    await MAXMessageChannel(announceChannel, streamRole, message)
 
 
 # delete the line with the role from the roleAssignMessage
@@ -386,10 +446,14 @@ async def makeAnnouncement(discordGuild, info, game):
 
     # get objects from discord api
     guild = bot.get_guild(discordGuild)
+
     if overrideRole:
-        streamRole = guild.get_role(overrideRole)
-    else:
+        if overrideRole and overrideRole != streamRole:
+            # use overrideRole instead
+            streamRole = overrideRole
+    if streamRole not in specialRoles:
         streamRole = guild.get_role(streamRole)
+
     announceChannel = guild.get_channel(announceChannel)
     botChannel = guild.get_channel(botChannel)
 
@@ -568,7 +632,8 @@ async def sendAllConfig(ctx, mode):
             if entry['discordGuild'] == ctx.guild.id:
                 message += '\n'
                 for key in entry:
-                    message += key + ': ``' + str(entry[key]) + '``\n'
+                    if key != 'announcedVideos' and key != 'discordGuild' and key != 'leaseSeconds' and key != 'time' and entry[key] != 'default':
+                        message += key + ': ``' + str(entry[key]) + '``\n'
 
     if ctx.internal:
         await ctx.send(message)
@@ -582,6 +647,10 @@ async def sendTwitchChannelConfig(ctx, channel):
                 value = str(config.get(query.guildID == ctx.guild.id)['announceChannel']) + '-' + str(channel[key])
                 value = await converter.convert(ctx, value)
                 message += key + ': ' + value.jump_url + '\n'
+            elif key == 'announceRole' and channel[key] not in specialRoles:
+                converter = discord.ext.commands.RoleConverter()
+                value = str(await converter.convert(ctx, str(channel[key])))
+                message += key + ': ``' + value + '``\n'
             else:
                 message += key + ': ``' + str(channel[key]) + '``\n'
     await ctx.send(message)
@@ -756,16 +825,56 @@ async def on_member_join(member):
 
 
 
-@bot.command(name='youtube')
-async def youtube(ctx, youtubeChannel=None, announceChannel=None, notifyRole=None):
+@bot.command(name='youtube', help="""Add or remove YouTube channels for new uploads/stream notifications, specify per-channel notification roles and announcement channels.
+
+    Don't provide a ``role`` or ``roleChannel`` to disable self-assignable roles and clear the list of roles.
+
+    **youtubeChannel:**
+        The channel ID you want to add notifications for. Cannot be a name (like ``DrawnActor``), must be a channel ID (like ``UC_0hyh6_G3Ct1k1EiqaorqQ``). You can get a channel ID by going to a video and clicking the profile name in the description to go back to the channel, then looking for the ID at the end of the channel URL.
+    
+    **announceChannel:**
+        The channel MAX will make an announcement in when a video is uploaded to this channel. This will override whatever the server's announceChannel is when announcing a video. Don't specify this option to use the default, which is the server's announceChannel. Don't specify a ``notifyRole`` when using this option with a channel that has been added previously to only update the ``announceChannel`` for that channel. Valid options are:
+            ``default`` - this will use the server's announceChannel.
+            ``a channel name or ID`` - this will use the specified channel whenever a video is uploaded.
+        
+    **notifyRole:**
+        The role you want to notify when a video is uploaded to this channel. This will override whatever the server's streamRole is when announcing a video. Don't specify this option to use the default, which is the server's streamRole, or whatever you previously specified if you have added the channel before. Valid options are:
+            ``default`` - this will use the server's streamRole.
+            ``none`` - this will not notify anyone.
+            ``everyone`` or ``here`` - will notify users the same as @ mentioning their respective option.
+            ``a role name or ID`` - this will notify the specified role whenever a video is uploaded.""")
+async def youtube(ctx, youtubeChannel, announceChannel=None, notifyRole=None):
     ctx = await modifyContext(ctx)
 
-    youtubeChannel = 'UCGPBgBHGdmr1VSaK_3Oitqw'
+    # youtubeChannel = 'UCGPBgBHGdmr1VSaK_3Oitqw' # various artists - topic
+    # youtubeChannel = 'UC-lHJZR3Gqxm24_Vd_AJ5Yw' # pewdiepie
+    oldEntry = youtubeConfig.get((query.discordGuild == ctx.guild.id) & (query.channelID == youtubeChannel))
+
+    if oldEntry and not announceChannel and not notifyRole:
+        print('Removing channel', youtubeChannel, 'from config for', ctx.guild.id)
+        youtubeConfig.remove((query.discordGuild == ctx.guild.id) & (query.channelID == youtubeChannel))
+        await ctx.send('Channel ``' + youtubeChannel + '`` removed from announcements.')
+        await sendAllConfig(ctx, 'youtube')
+        return
 
     if not announceChannel:
-        announceChannel = 'default'
+        if not oldEntry:
+            announceChannel = 'default'
+        else:
+            oldChannel = oldEntry.get('announceChannel')
+            if oldChannel:
+                announceChannel = oldChannel
+            else:
+                announceChannel = 'default'
     if not notifyRole:
-        notifyRole = 'default'
+        if not oldEntry:
+            notifyRole = 'default'
+        else:
+            oldRole = oldEntry.get('notifyRole')
+            if oldRole:
+                notifyRole = oldRole
+            else:
+                notifyRole = 'default'
 
     if announceChannel != 'default':
         converter = discord.ext.commands.TextChannelConverter()
@@ -778,14 +887,27 @@ async def youtube(ctx, youtubeChannel=None, announceChannel=None, notifyRole=Non
 
     youtubeConfig.upsert({'discordGuild': ctx.guild.id, 'channelID': youtubeChannel, 'announceChannel': announceChannel, 'notifyRole': notifyRole}, (query.discordGuild == ctx.guild.id) & (query.channelID == youtubeChannel))
 
+    if oldEntry:
+        videosCollected = oldEntry.get('announcedVideos')
+    else:
+        videosCollected = None
+    if not videosCollected:
+        await ctx.send('Collecting videos from channel. This may take a long time depending on how many videos the channel has.')
+        responseStatus = await MAXYoutube.getAllYoutubeUploads(youtubeChannel)
+        if responseStatus != 200:
+            await ctx.send('Error "' + str(responseStatus) + '" when attempting to get ``' + youtubeChannel + '`` from YouTube. Make sure you have provided a valid YouTube channel ID (like ``UC_0hyh6_G3Ct1k1EiqaorqQ``).')
+            youtubeConfig.remove((query.discordGuild == ctx.guild.id) & (query.channelID == youtubeChannel))
+            await sendAllConfig(ctx, 'youtube')
+            return
+
     responseStatus = await MAXYoutube.subscribeYoutubeUploads(ctx.guild.id, youtubeChannel)
     if responseStatus == 202:
         channelText = ctx.guild.get_channel(announceChannel).mention if announceChannel != 'default' else 'the default announcement channel'
-        announceText = ctx.guild.get_role(notifyRole).mention if notifyRole not in specialRoles else notifyRole
-        await ctx.send('Successfully registered ' + youtubeChannel + ' for announcements in ' + channelText + ' and notifying ``' + announceText + '``.')
+        announceText = ctx.guild.get_role(notifyRole).name if notifyRole not in specialRoles else notifyRole
+        await ctx.send('Successfully registered ``' + youtubeChannel + '`` for announcements in ' + channelText + ' and notifying the ``' + announceText + '`` role.')
         await sendAllConfig(ctx, 'youtube')
     else:
-        await ctx.send('Error ' + responseStatus + ' when attempting to get ' + youtubeChannel + ' from YouTube. Make sure you have provided a valid YouTube channel ID (like ``UC_0hyh6_G3Ct1k1EiqaorqQ``).')
+        await ctx.send('Error ' + responseStatus + ' when attempting to get ``' + youtubeChannel + '`` from YouTube. Make sure you have provided a valid YouTube channel ID (like ``UC_0hyh6_G3Ct1k1EiqaorqQ``).')
         youtubeConfig.remove((query.discordGuild == ctx.guild.id) & (query.channelID == youtubeChannel))
         await sendAllConfig(ctx, 'youtube')
     
