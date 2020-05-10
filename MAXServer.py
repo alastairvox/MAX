@@ -33,9 +33,9 @@ print = MAXShared.printName(print, "SERVER:")
 
 
 async def on_startup(app):
-    print('Connected to HTTP server on port 81.')
+    print('Connected to HTTP server on port ' + config.get(query.name == 'callback')['port'] + '.')
 async def on_shutdown(app):
-    print('Disconnected from HTTP server on port 81.')
+    print('Disconnected from HTTP server on port ' + config.get(query.name == 'callback')['port'] + '.')
 
 # gets the table/subsection of config for this service
 config = generalConfig
@@ -104,7 +104,7 @@ async def engage():
     app.add_routes(routes)
 
     loop = asyncio.get_event_loop()
-    loop.create_task(aiohttp.web._run_app(app, port='81', print=None))
+    loop.create_task(aiohttp.web._run_app(app, port=config.get(query.name == 'callback')['port'], print=None))
 
 
 

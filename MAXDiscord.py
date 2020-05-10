@@ -827,8 +827,6 @@ async def on_member_join(member):
 
 @bot.command(name='youtube', help="""Add or remove YouTube channels for new uploads/stream notifications, specify per-channel notification roles and announcement channels.
 
-    Don't provide a ``role`` or ``roleChannel`` to disable self-assignable roles and clear the list of roles.
-
     **youtubeChannel:**
         The channel ID you want to add notifications for. Cannot be a name (like ``DrawnActor``), must be a channel ID (like ``UC_0hyh6_G3Ct1k1EiqaorqQ``). You can get a channel ID by going to a video and clicking the profile name in the description to go back to the channel, then looking for the ID at the end of the channel URL.
     
