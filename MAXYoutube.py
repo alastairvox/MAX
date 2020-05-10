@@ -1,4 +1,4 @@
-import asyncio
+import asyncio, datetime, dateutil.parser
 import aiohttp
 import MAXShared, MAXDiscord, MAXTwitch, MAXServer
 from MAXShared import query, devFlag, auth, generalConfig, youtubeConfig, discordConfig, twitchConfig, dayNames, fullDayNames
@@ -107,49 +107,24 @@ async def getAllYoutubeUploads(channel):
                         print('Finished requests for', channel, 'videos. Inserted', len(videoList), 'videos into config.')
                         return resp.status
 
+async def youtubeWaitForResub(seconds, discordGuild, youtubeChannel):
+    print('waiting', seconds, 'seconds to resub to', youtubeChannel)
+    await asyncio.sleep(seconds)
+    await subscribeYoutubeUploads(discordGuild, youtubeChannel)
 
-
-# ---------- EVENTS -----------------------------------------------------------------------------------------------------------
-#       ##### ##                                                      
-#    ######  /### /                                                   
-#   /#   /  / ###/                                      #             
-#  /    /  /   ## ##                                   ##             
-#      /  /       ##                                   ##             
-#     ## ##        ##    ###      /##  ###  /###     ######## /###    
-#     ## ##         ##    ###    / ###  ###/ #### / ######## / #### / 
-#     ## ######     ##     ###  /   ###  ##   ###/     ##   ##  ###/  
-#     ## #####      ##      ## ##    ### ##    ##      ##  ####       
-#     ## ##         ##      ## ########  ##    ##      ##    ###      
-#     #  ##         ##      ## #######   ##    ##      ##      ###    
-#        /          ##      ## ##        ##    ##      ##        ###  
-#    /##/         / ##      /  ####    / ##    ##      ##   /###  ##  
-#   /  ##########/   ######/    ######/  ###   ###     ##  / #### /   
-#  /     ######       #####      #####    ###   ###     ##    ###/    
-#  #                                                                  
-#   ##                                                                
-# ---------- EVENTS -----------------------------------------------------------------------------------------------------------
-
-
-
-
-
-
-# ---------- COMMANDS ---------------------------------------------------------------------------------------------------------
-#        # ###                                                                       ##             
-#      /  /###  /                                                                     ##            
-#     /  /  ###/                                                                      ##            
-#    /  ##   ##                                                                       ##            
-#   /  ###                                                                            ##            
-#  ##   ##          /###   ### /### /###   ### /### /###     /###   ###  /###     ### ##    /###    
-#  ##   ##         / ###  / ##/ ###/ /##  / ##/ ###/ /##  / / ###  / ###/ #### / ######### / #### / 
-#  ##   ##        /   ###/   ##  ###/ ###/   ##  ###/ ###/ /   ###/   ##   ###/ ##   #### ##  ###/  
-#  ##   ##       ##    ##    ##   ##   ##    ##   ##   ## ##    ##    ##    ##  ##    ## ####       
-#  ##   ##       ##    ##    ##   ##   ##    ##   ##   ## ##    ##    ##    ##  ##    ##   ###      
-#   ##  ##       ##    ##    ##   ##   ##    ##   ##   ## ##    ##    ##    ##  ##    ##     ###    
-#    ## #      / ##    ##    ##   ##   ##    ##   ##   ## ##    ##    ##    ##  ##    ##       ###  
-#     ###     /  ##    ##    ##   ##   ##    ##   ##   ## ##    /#    ##    ##  ##    /#  /###  ##  
-#      ######/    ######     ###  ###  ###   ###  ###  ### ####/ ##   ###   ###  ####/   / #### /   
-#        ###       ####       ###  ###  ###   ###  ###  ### ###   ##   ###   ###  ###       ###/    
-# ---------- COMMANDS ---------------------------------------------------------------------------------------------------------
-
-
+async def youtubePrepareAllResubs():
+    loop = asyncio.get_event_loop()
+    for entry in config.all():
+        leaseSeconds = entry.get('leaseSeconds')
+        timeAdded = entry.get('time')
+        if leaseSeconds and timeAdded:
+            leaseSecondsDelta = datetime.timedelta(seconds=leaseSeconds)
+            timeAdded = dateutil.parser.parse(timeAdded)
+            timeNow = datetime.datetime.now()
+            timeDifference = timeNow - timeAdded
+            if timeDifference >= leaseSecondsDelta:
+                # resub immediately
+                loop.create_task(subscribeYoutubeUploads(entry.get('discordGuild'), entry.get('channelID')))
+            else:
+                timeDifference = leaseSecondsDelta - timeDifference
+                loop.create_task(youtubeWaitForResub(timeDifference.total_seconds(), entry.get('discordGuild'), entry.get('channelID')))

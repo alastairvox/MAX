@@ -1,6 +1,6 @@
 import asyncio, inspect, datetime
 import aiohttp
-import MAXShared, MAXDiscord, MAXTwitch
+import MAXShared, MAXDiscord, MAXTwitch, MAXYoutube
 from MAXShared import query, devFlag, auth, generalConfig, youtubeConfig, discordConfig, twitchConfig, dayNames, fullDayNames
 
 # overloads print for this module so that all prints (hopefully all the sub functions that get called too) are appended with which service the prints came from
@@ -74,7 +74,7 @@ async def subscribeTwitchTopic():
     while not MAXTwitch.bot.http.token:
         await asyncio.sleep(30)
     headers = {"Client-ID": MAXTwitch.bot.http.client_id, "Authorization": "Bearer " + MAXTwitch.bot.http.token}
-    async with session.post('https://api.twitch.tv/helix/webhooks/hub', headers=headers, json={'hub.callback': generalConfig.get(query.name == 'callback')['value'] + 'twitch', 'hub.mode': 'subscribe', 'hub.topic': 'https://api.twitch.tv/helix/streams?user_id=520858550', 'hub.lease_seconds': 864000}) as resp:
+    async with session.post('https://api.twitch.tv/helix/webhooks/hub', headers=headers, json={'hub.callback': config.get(query.name == 'callback')['value'] + 'twitch', 'hub.mode': 'subscribe', 'hub.topic': 'https://api.twitch.tv/helix/streams?user_id=520858550', 'hub.lease_seconds': 864000}) as resp:
         print(resp.status)
         print(await resp.text())
 
@@ -158,6 +158,8 @@ async def youtube(request):
             # store them in youtube config, we'll check later to see if we need to renew by by finding the difference between the time it was stored and the time it is now in seconds and seeing if >= leaseSeconds (minus 90) and if it is then resubscribe xx nvm do it the way i say below
             youtubeConfig.update({'leaseSeconds': leaseSeconds, 'time': str(datetime.datetime.now())}, (query.discordGuild == discordGuild) & (query.channelID == channel))
             # CALL FUNCTION THAT AWAITS SLEEP FOR THE NUMBER OF SECONDS EQUAL TO the stored leaseSeconds (because i subtract 90 when storing) then calls the resubscribe, make a function that will look through all the stored youtube channels when discord starts, and calls the same function for each channel that has a leaseSeconds stored
+            loop = asyncio.get_event_loop()
+            loop.create_task(MAXYoutube.youtubeWaitForResub(leaseSeconds, discordGuild, channel))
             print('Lease aquired for guild', discordGuild, 'and channel', channel)
             return aiohttp.web.Response(status=200, text=hubChallenge)
         else:
@@ -178,25 +180,3 @@ async def youtubeUploadedNotification(request):
     loop = asyncio.get_event_loop()
     loop.create_task(MAXDiscord.announceYoutubeUpload(discordGuild, await request.read()))
     return aiohttp.web.Response(status=200)
-
-
-
-# ---------- COMMANDS ---------------------------------------------------------------------------------------------------------
-#        # ###                                                                       ##             
-#      /  /###  /                                                                     ##            
-#     /  /  ###/                                                                      ##            
-#    /  ##   ##                                                                       ##            
-#   /  ###                                                                            ##            
-#  ##   ##          /###   ### /### /###   ### /### /###     /###   ###  /###     ### ##    /###    
-#  ##   ##         / ###  / ##/ ###/ /##  / ##/ ###/ /##  / / ###  / ###/ #### / ######### / #### / 
-#  ##   ##        /   ###/   ##  ###/ ###/   ##  ###/ ###/ /   ###/   ##   ###/ ##   #### ##  ###/  
-#  ##   ##       ##    ##    ##   ##   ##    ##   ##   ## ##    ##    ##    ##  ##    ## ####       
-#  ##   ##       ##    ##    ##   ##   ##    ##   ##   ## ##    ##    ##    ##  ##    ##   ###      
-#   ##  ##       ##    ##    ##   ##   ##    ##   ##   ## ##    ##    ##    ##  ##    ##     ###    
-#    ## #      / ##    ##    ##   ##   ##    ##   ##   ## ##    ##    ##    ##  ##    ##       ###  
-#     ###     /  ##    ##    ##   ##   ##    ##   ##   ## ##    /#    ##    ##  ##    /#  /###  ##  
-#      ######/    ######     ###  ###  ###   ###  ###  ### ####/ ##   ###   ###  ####/   / #### /   
-#        ###       ####       ###  ###  ###   ###  ###  ### ###   ##   ###   ###  ###       ###/    
-# ---------- COMMANDS ---------------------------------------------------------------------------------------------------------
-
-

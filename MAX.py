@@ -1,6 +1,6 @@
 import asyncio, io, sys
 import MAXShared
-import MAXDiscord, MAXTwitch, MAXServer
+import MAXDiscord, MAXTwitch, MAXServer, MAXYoutube
 
 # forces the stdout to flush constantly so that nssm can actually keep the logfile updated (nothing will show until after close, lost on crash otherwise)
 # does this by reopening the stdout as a writable binary with no buffering then wraps it in an io text wrapper?? and overwrites the default stdout
@@ -27,6 +27,7 @@ def main():
     loop.create_task(MAXDiscord.engage())
     loop.create_task(MAXTwitch.engage())
     loop.create_task(MAXServer.engage())
+    loop.create_task(MAXYoutube.youtubePrepareAllResubs())
     # makes the event loop run forever (this is blocking), so any current and future scheduled tasks will run until we explicitly tell the loop to die with loop.stop()
     loop.run_forever()
 
