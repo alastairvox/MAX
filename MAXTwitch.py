@@ -46,13 +46,6 @@ for entry in discordConfig.all():
         if name not in initialChannels:
             initialChannels.append(name)
 
-# localHost = '192.168.50.62'
-# externalHost = '172.103.254.14'
-# port = '81'
-# callback = 'twitchcallback'
-
-# bot = twitchio.ext.commands.Bot(irc_token=twitchToken, client_id=twitchClientID, prefix="!", nick=twitchNick, initial_channels=initialChannels, webhook_server=True, local_host=localHost, external_host=externalHost, port=port, callback=callback)
-
 bot = twitchio.ext.commands.Bot(irc_token=twitchToken, client_id=twitchClientID, prefix="!", nick=twitchNick, initial_channels=initialChannels, client_secret=twitchClientSecret)
 
 
