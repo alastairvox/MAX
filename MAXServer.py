@@ -1,7 +1,7 @@
-import asyncio, inspect, datetime
+import asyncio, inspect, datetime, json
 import aiohttp
-import MAXShared, MAXDiscord, MAXTwitch, MAXYoutube
-from MAXShared import query, devFlag, auth, generalConfig, youtubeConfig, discordConfig, twitchConfig, dayNames, fullDayNames
+import MAXShared, MAXDiscord, MAXTwitch, MAXYoutube, MAXSpotify
+from MAXShared import query, devFlag, auth, generalConfig, youtubeConfig, spotifyConfig, discordConfig, twitchConfig, dayNames, fullDayNames
 
 # overloads print for this module so that all prints (hopefully all the sub functions that get called too) are appended with which service the prints came from
 print = MAXShared.printName(print, "SERVER:")
@@ -46,6 +46,8 @@ app.on_startup.append(on_startup)
 app.on_shutdown.append(on_shutdown)
 session = aiohttp.ClientSession()
 
+connectedTwitchWS = None
+lastTwitchWSPingReturned = False
 
 
 # ---------- FUNCTIONS --------------------------------------------------------------------------------------------------------
@@ -69,6 +71,20 @@ session = aiohttp.ClientSession()
 # ---------- FUNCTIONS --------------------------------------------------------------------------------------------------------
 
 
+async def keepTwitchWSAlive():
+    while True:
+        await asyncio.sleep(259) #259
+        if connectedTwitchWS:
+            global lastTwitchWSPingReturned
+            lastTwitchWSPingReturned = False
+            await connectedTwitchWS.send_json({'type': 'PING'})
+            await asyncio.sleep(11)
+            if not lastTwitchWSPingReturned:
+                print('Twitch did not respond to ping, restarting connection.')
+                await connectedTwitchWS.close()
+        else:
+            continue
+
 
 async def subscribeTwitchTopic():
     while not MAXTwitch.bot.http.token:
@@ -79,16 +95,78 @@ async def subscribeTwitchTopic():
         print(await resp.text())
 
 async def twitchWS():
-    async with session.ws_connect('wss://pubsub-edge.twitch.tv') as ws:
-        print('WebSocket session established with Twitch.')
-        await ws.send_json({"type": "PING"})
-        async for msg in ws:
-            if msg.json()['type'] == 'PONG':
-                print("Twitch response (pong):", msg.data, "Waiting 30s to PING.")
-                await asyncio.sleep(30)
-                await ws.send_json({"type": "PING"})
-            else:
-                print("Twitch response (not pong):", msg.json())
+    loop = asyncio.get_event_loop()
+    loop.create_task(keepTwitchWSAlive())
+    while True:
+        try:
+            async with session.ws_connect('wss://pubsub-edge.twitch.tv', autoping=False) as ws:
+                global connectedTwitchWS
+                connectedTwitchWS = ws
+                print('WebSocket session established with Twitch.')
+                # for entry in spotify config that has a "twitchAccessToken" entry:
+                # refresh the access tokens
+                # request a topic for each entry
+                # more topics are added later by calling connectedTwitchWS.send_json
+                for entry in spotifyConfig.all():
+                    if entry.get("twitchRefreshToken") and entry.get("twitchChannelID"):
+                        async with session.post("https://id.twitch.tv/oauth2/token?grant_type=refresh_token&refresh_token="+entry["twitchRefreshToken"]+"&client_id="+auth.get(query.name=='twitch')['clientID']+"&client_secret="+auth.get(query.name=='twitch')['clientSecret']) as resp:
+                            info = await resp.json()
+                            if not 'error' in info and 'access_token' in info:
+                                spotifyConfig.update({'twitchAccessToken': info['access_token'], 'twitchRefreshToken': info['refresh_token']}, query.discordGuild==entry['discordGuild'])
+                                accessToken = info['access_token']
+                            else:
+                                print("Couldn't fetch new access token for", entry["twitchChannelID"], "so attempting to use old token.")
+                                accessToken = entry["twitchAccessToken"]
+                        await ws.send_json({"type": "LISTEN", "data": {"topics": ['channel-points-channel-v1.'+entry["twitchChannelID"]], "auth_token": accessToken}})
+                async for msg in ws:
+                    if msg.json():
+                        msgJSON = msg.json()
+                        
+                        successDict = {"type":"RESPONSE","error":"","nonce":""}
+                        
+                        if msgJSON.get('type') == "PONG":
+                            global lastTwitchWSPingReturned
+                            lastTwitchWSPingReturned = True
+                        elif msgJSON.get('type') == "RECONNECT":
+                            print('Twitch requested reconnect. Waiting 15 seconds and reconnecting.')
+                            await asyncio.sleep(15)
+                            break
+                        elif msgJSON.get('type') == 'MESSAGE' and msgJSON.get('data') and msgJSON['data'].get('message'):
+                            # message is a fucking string for some reason...
+                            msgJSONMessage = json.loads(msgJSON['data']['message'])
+                            if msgJSONMessage and msgJSONMessage.get('type') == "reward-redeemed" and msgJSONMessage.get('data'):
+                                rewardData = msgJSONMessage['data']
+                                print("Reward redeemed.")
+
+                                channelID = str(rewardData['redemption']['channel_id'])
+                                channelEntry = spotifyConfig.get(query.twitchChannelID == channelID)
+                                
+                                if channelEntry:
+                                    monitoredReward = channelEntry['rewardName']
+                                    
+                                    if rewardData['redemption']['reward']['title'] == monitoredReward:
+                                        # check if strimmer is live, if not send a message
+                                        # streamLive = True 57717183
+                                        streamLive = await MAXTwitch.bot.get_stream(channel=channelID)
+                                        if streamLive:
+                                            loop = asyncio.get_event_loop()
+                                            loop.create_task(MAXSpotify.songRequest(discordGuild=channelEntry['discordGuild'], song=rewardData['redemption']['user_input'].strip()))
+                                        else:
+                                            print("Stream is offline, won't request.")
+                                            await MAXTwitch.messageLinkedTwitchChannel(channelEntry['discordGuild'], "You can not redeem songs while the stream is offline. Goodbye cha-cha-channel points!")
+                        elif msgJSON == successDict:
+                            print("Twitch sent a success response, likely began listening to a channel successfully.")
+                        else:
+                            print("Twitch response (not pong, reconnect, reward, success):", msg.data)
+                    else:
+                        print("Twitch response (not JSON):", msg.data)
+                print('TwitchWS connection ended.')
+                connectedTwitchWS = None
+                continue
+        except Exception as error:
+            print('Error: There was an error with Twitch websocket connection: ', repr(error))
+            connectedTwitchWS = None
+            continue
 
 async def echoWS():
     async with session.ws_connect('ws://echo.websocket.org') as ws:
@@ -130,10 +208,64 @@ async def engage():
 
 
 
-@routes.get('/')
-async def hello(request):
-    print('Responding to', request, 'from', request.remote, 'headers', request.headers, 'body', await request.text())
-    return aiohttp.web.Response(status=404)
+@routes.get('/spotify/auth/{discordGuild}')
+async def spotifyAuth(request):
+    discordGuild = int(request.match_info['discordGuild'])
+    spotifyEntry = spotifyConfig.get(query.discordGuild == discordGuild)
+    if spotifyEntry:
+        raise aiohttp.web.HTTPTemporaryRedirect("https://accounts.spotify.com/authorize?client_id="+auth.get(query.name=='spotify')['clientID']+"&response_type=code&redirect_uri="+generalConfig.get(query.name == 'callback')['value']+"spotify/callback&state="+str(discordGuild)+"&scope=user-read-playback-state user-modify-playback-state user-read-currently-playing user-read-recently-played")
+    else:
+        return aiohttp.web.Response(text="""<div style="height: 100%; display: flex; justify-content: center; align-items: center"><div><b>Error: You must first call MAX's "spotify" command to enable authorization for your server.</b></div></div>""", content_type="text/html")
+
+@routes.get('/spotify/callback')
+async def spotifyCallback(request):
+    if 'code' not in request.query or 'state' not in request.query:
+        return aiohttp.web.Response(text="""<div style="height: 100%; display: flex; justify-content: center; align-items: center"><div><b>Error: Something went wrong with Spotify authorization.</b><br>Please follow the link that MAX provided to try authorization again, or copy and paste it into your browser's URL bar.</div></div>""", content_type="text/html")
+    else:
+        await MAXSpotify.createClient(discordGuild=int(request.query['state']), code=request.query['code'])
+    return aiohttp.web.Response(text="""<div style="height: 100%; display: flex; justify-content: center; align-items: center"><div><b>Spotify authorization successful!</b><br>If you haven't yet, please follow the second link that MAX provided to authorize with Twitch.</div></div>""", content_type="text/html")
+
+@routes.get('/twitch/auth/{discordGuild}')
+async def twitchAuth(request):
+    discordGuild = int(request.match_info['discordGuild'])
+    spotifyEntry = spotifyConfig.get(query.discordGuild == discordGuild)
+    if spotifyEntry:
+        raise aiohttp.web.HTTPTemporaryRedirect("https://id.twitch.tv/oauth2/authorize?client_id="+auth.get(query.name=='twitch')['clientID']+"&redirect_uri="+generalConfig.get(query.name == 'callback')['value']+"twitch/callback&response_type=code&scope=channel:read:redemptions&state="+str(discordGuild))
+    else:
+        return aiohttp.web.Response(text="""<div style="height: 100%; display: flex; justify-content: center; align-items: center"><div><b>Error: You must first call MAX's "spotify" command to enable authorization for your server.</b></div></div>""", content_type="text/html")
+
+@routes.get('/twitch/callback')
+async def twitchCallback(request):
+    if 'code' not in request.query or 'state' not in request.query:
+        return aiohttp.web.Response(text="""<div style="height: 100%; display: flex; justify-content: center; align-items: center"><div><b>Error: Something went wrong with Twitch authorization.</b><br>Please follow the link that MAX provided to try authorization again, or copy and paste it into your browser's URL bar.</div></div>""", content_type="text/html")
+    else:
+        # get access token, refresh token, channel id
+        async with session.post("https://id.twitch.tv/oauth2/token?client_id="+auth.get(query.name=='twitch')['clientID']+"&client_secret="+auth.get(query.name=='twitch')['clientSecret']+"&code="+request.query['code']+"&grant_type=authorization_code&redirect_uri="+generalConfig.get(query.name == 'callback')['value']+"twitch/callback") as resp:
+            # json encoded access token returned
+            info = await resp.json()
+            if info and info.get('access_token') and info.get('refresh_token'):
+                headers = {"Client-ID": auth.get(query.name=='twitch')['clientID'], "Authorization": "Bearer " + info['access_token']}
+                async with session.get("https://api.twitch.tv/helix/users", headers=headers) as resp2:
+                    # json with user info returned
+                    user = await resp2.json()
+                    if user and user.get('data') and type(user['data']) == list and user['data'][0].get('id'):
+                        spotifyConfig.update({'twitchAccessToken': info['access_token'], 'twitchRefreshToken': info['refresh_token'], 'twitchChannelID': user['data'][0]['id']}, query.discordGuild==int(request.query['state']))
+                        # start listening to channel now that its been added
+                        while not connectedTwitchWS:
+                            await asyncio.sleep(1)
+                        await connectedTwitchWS.send_json({"type": "LISTEN", "data": {"topics": ['channel-points-channel-v1.'+user['data'][0]['id']], "auth_token": info['access_token']}})
+                    else:
+                        return aiohttp.web.Response(text="""<div style="height: 100%; display: flex; justify-content: center; align-items: center"><div><b>Error: Something went wrong with Twitch authorization.</b><br>Please follow the link that MAX provided to try authorization again, or copy and paste it into your browser's URL bar.</div></div>""", content_type="text/html")
+            else:
+                return aiohttp.web.Response(text="""<div style="height: 100%; display: flex; justify-content: center; align-items: center"><div><b>Error: Something went wrong with Twitch authorization.</b><br>Please follow the link that MAX provided to try authorization again, or copy and paste it into your browser's URL bar.</div></div>""", content_type="text/html")
+    return aiohttp.web.Response(text="""<div style="height: 100%; display: flex; justify-content: center; align-items: center"><div><b>Twitch authorization successful!</b><br>If you haven't yet, please follow the second link that MAX provided to authorize with Spotify.</div></div>""", content_type="text/html")
+
+# editing this out to hopefully not have to deal with the possibility that aiohhtp parses an attack message :(
+# @routes.get('/')
+# async def hello(request):
+#     #print('Responding to', request, 'from', request.remote, 'headers', request.headers, 'body', await request.text())
+#     print('Responding to', request, 'from', request.remote)
+#     return aiohttp.web.Response(status=404)
 
 @routes.get('/stream')
 async def stream(request):

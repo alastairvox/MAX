@@ -1,7 +1,7 @@
-import itertools, sys, traceback, asyncio, copy, datetime, dateutil.parser, pytz, tinydb, tinydb.operations, lxml.etree
+import itertools, sys, traceback, asyncio, copy, datetime, dateutil.parser, pytz, tinydb, tinydb.operations, lxml.etree, inspect
 import discord, discord.ext.commands
-import MAXShared, MAXTwitch, MAXServer, MAXYoutube
-from MAXShared import auth, youtubeConfig, discordConfig, twitchConfig, query, devFlag, dayNames, fullDayNames, specialRoles
+import MAXShared, MAXTwitch, MAXServer, MAXYoutube, MAXSpotify
+from MAXShared import auth, youtubeConfig, discordConfig, generalConfig, twitchConfig, spotifyConfig, query, devFlag, dayNames, fullDayNames, specialRoles
 
 # overloads print for this module so that all prints (hopefully all the sub functions that get called too) are appended with which service the prints came from
 print = MAXShared.printName(print, "DISCORD:")
@@ -209,7 +209,7 @@ async def announceYoutubeUpload(guildID, xmlBytes):
     botChannel = discordGuildConfig['botChannel']
     prefix = discordGuildConfig['prefix']
     # youtube config
-    overrideChannel = youtubeChannelConfig.get('notifyRole')
+    overrideChannel = youtubeChannelConfig.get('announceChannel')
     overrideRole = youtubeChannelConfig.get('notifyRole')
 
     # get objects from discord api
@@ -824,6 +824,37 @@ async def on_member_join(member):
 # ---------- COMMANDS ---------------------------------------------------------------------------------------------------------
 
 
+# @bot.command(name='test', rest_is_raw=True)
+# async def test(ctx, *, song):
+#     ctx = await modifyContext(ctx)
+#     loop = asyncio.get_event_loop()
+#     loop.create_task(MAXServer.twitchWS())
+#     # loop.create_task(MAXSpotify.songRequest(ctx.guild.id, song.strip()))
+#     await ctx.send('twitch requested.')
+
+
+@bot.command(name='spotify', rest_is_raw=True, help="""Authorize spotify account, authorize twitch account, and set the name of the channel points reward to use for song requests.
+
+    Setting up Spotify song requests is a bit of an involved process. You need to first tell MAX the name of the channel points reward you want users to redeem to request Spotify songs, then authorize MAX to control your Spotify account, and finally authorize MAX to view your Twitch channel point rewards. After using this command, MAX will send you two links to click that will let you authorize Spotify and Twitch through your browser. NOTE: Unless you use the ``configure ownerTwitchName`` command with the name of the channel you authorized, MAX won't message your Twitch channel about song requests and request errors (requests will still work, viewers will just not be informed about requests that failed to play or how many songs are left in the request queue when they make a request).
+    
+    **rewardName:**
+        The exact, case-sensitive name of the reward you want viewers to redeem to request a song (as you have entered it on Twitch in your custom reward). The reward needs to have the "Require Viewer to Enter Text" option enabled for the redeemer to be able to enter a song name or a spotify song link/URI. You may also want to enable "Skip Reward Requests Queue" to avoid having to manually review the redemption. Note that if you change the name of this reward you will have to update it with MAX by using this command again with the new name.""")
+async def spotify(ctx, *, rewardName):
+    ctx = await modifyContext(ctx)
+
+    rewardName = rewardName.strip() if rewardName else None
+
+    if not rewardName or rewardName == "":
+        # this is all to just trick the error handler into thinking im passing an inspect.Parameter class because all it uses is the "name" parameter when you raise a "MissingRequiredArgument", so that i dont have to do custom error handling for this. i need to do this because "rest is raw" means rewardName will always start with at least '' as its value which is technically a value
+        class Tmp: pass
+        tmp = Tmp
+        tmp.name = "rewardName"
+        raise discord.ext.commands.MissingRequiredArgument(param=tmp)
+
+    spotifyConfig.upsert({'discordGuild': ctx.guild.id, "rewardName": rewardName}, query.discordGuild == ctx.guild.id)
+
+    await ctx.author.send("Follow the prompts at the following link to authorize MAX to control Spotify:\n<"+ generalConfig.get(query.name == 'callback')['value'] + "spotify/auth/" + str(ctx.guild.id) + ">\n\nOnce you have done that, the next link will authorize MAX to see your Twitch channel points redemptions:\n<"+ generalConfig.get(query.name == 'callback')['value'] + "twitch/auth/" + str(ctx.guild.id)+">")
+    await ctx.send("I've sent you two links in private messages, open them in your browser and follow the login prompts to authorize Spotify control and let MAX see Twitch channel points redemptions.")
 
 @bot.command(name='youtube', help="""Add or remove YouTube channels for new uploads/stream notifications, specify per-channel notification roles and announcement channels.
 
@@ -1021,6 +1052,7 @@ async def selfroles(ctx, role=None, roleChannel=None):
             ``all`` - all current server settings, including the state of all toggleable settings, and any twitch streams with their announce schedules.
             ``prefix`` - the prefix (``!``, ``.``, ``-``, etc) that you want MAX to use for commands on your server.
             ``owner`` - the user (name or ID) that you want to be allowed to configure MAX or access sensitive commands.
+            ``ownerTwitchName`` - the Twitch channel (name) for MAX to join as a chat bot (as MAX_BDT) so that you can use these commands and other twitch-specific commands from your Twitch chat. MAX will also message this channel about Spotify song requests and request errors if you have set that up (using the ``spotify`` command).
             ``botChannel`` - the channel (name or ID) you want MAX to tell people to use commands in (when making announcements, etc).
             ``announceChannel`` - the channel (name or ID) you want MAX to make announcements in.
             ``streamRole`` - the role (name or ID) that you want MAX to @ mention for announcements and give to users when they join the server (can also be ``everyone``, ``here``, or ``none``). Since MAX keeps roles internally by ID, you don't have to use this if you have only changed the name of your previous stream role: just when you want to change it to a different role object that already exists.
@@ -1040,6 +1072,9 @@ async def configure(ctx, option, value=None):
         converter = None
     elif option == 'timezone':
         option = 'timeZone'
+        converter = None
+    elif option == 'ownertwitchname':
+        option = 'ownerNames'
         converter = None
     elif option == 'owner':
         converter = discord.ext.commands.UserConverter()
@@ -1067,11 +1102,17 @@ async def configure(ctx, option, value=None):
     
     if converter:
         converted = await converter.convert(ctx, value)
-    elif option == 'timezone':
+    elif option == 'timeZone':
         try:
             pytz.timezone(value)
         except pytz.exceptions.UnknownTimeZoneError:
             raise discord.ext.commands.BadArgument(message="An invalid time zone was entered. Must be in the following list: <https://gist.github.com/heyalexej/8bf688fd67d7199be4a1682b3eec7568>")
+    elif option == 'ownerNames':
+        value = [value]
+        try:
+            await MAXTwitch.bot.join_channels(value)
+        except:
+            raise discord.ext.commands.BadArgument(message="There was an error joining the Twitch channel you provided. Please make sure you are entering your exact channel username.")
 
     valueID = converted.id if converter else value
 

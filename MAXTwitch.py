@@ -77,17 +77,20 @@ async def new_global_before_hook(self, ctx):
     print('Command', '"'+ ctx.command.name +'"','invoked by', str(ctx.author.name), '('+ str(ctx.author.id) +')', 'on channel "' + str(ctx.channel.name) + '".' if not ctx.channel == None else 'in private message.')
 twitchio.ext.commands.Bot.global_before_hook = new_global_before_hook
 
+async def messageLinkedTwitchChannel(discordGuild, message):
+    for entry in discordConfig.all():
+        if entry.get('guildID') == int(discordGuild) and entry.get('ownerNames'):
+            channel = bot.get_channel(entry['ownerNames'][0])
+            if channel:
+                await channel.send(message)
+            break
+
 # starts the bot when called
 async def engage():
     print("Starting...")
     loop = asyncio.get_event_loop()
     loop.create_task(checkChannels())
-    # loop.create_task(MAXServer.twitchWS())
     await bot.start()
-
-# called when told to join a new channel, sets up defaults (creates an entry for that channel)
-async def configNewChannel(channel):
-    pass
 
 async def checkChannels():
     while True:
@@ -203,18 +206,6 @@ async def notifyChannels(response):
         print(stream['info']['user_name'] + ' is live unannounced...')
         await MAXDiscord.makeAnnouncement(stream['discordGuild'], stream['info'], game)
 
-# join a twitch channel (only going to be called by a discord server owner)
-async def join(ctx):
-    # configNewChannel(channel)
-    # bot.join_channels(channelList)
-    pass
-
-# leave a twitch channel (only going to be called by a discord server owner)
-async def leave(ctx):
-    # configRemoveChannel(channel)
-    # bot.part_channels(channelList)
-    pass
-
 
 
 # ---------- EVENTS -----------------------------------------------------------------------------------------------------------
@@ -280,4 +271,3 @@ async def test(ctx):
     print('test')
     await ctx.send(f'Hello {ctx.author.name}!')
     print('test2')
-    await MAXServer.subscribeTwitchTopic()

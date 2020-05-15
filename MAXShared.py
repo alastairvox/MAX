@@ -19,6 +19,8 @@ global twitchConfig
 twitchConfig = tinydb.TinyDB(configPath + 'MAXTwitchConfig.json', indent=4, separators=(',', ': '))
 global youtubeConfig
 youtubeConfig = tinydb.TinyDB(configPath + 'MAXYoutubeConfig.json', indent=4, separators=(',', ': '))
+global spotifyConfig
+spotifyConfig = tinydb.TinyDB(configPath + 'MAXSpotifyConfig.json', indent=4, separators=(',', ': '))
 
 global dayNames
 dayNames = ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun']
