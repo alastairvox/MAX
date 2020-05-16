@@ -380,17 +380,19 @@ async def modifyContext(ctx):
             raise discord.ext.commands.CheckFailure(message="This command can only be used by a discord server owner.")
         return ctx
     else:
-        userName = ctx
-        ctx = await createFakeContext()
+        userName = ctx.author.name
         for entry in config:
-            if userName in entry['ownerNames']:
-                ctx.guild = bot.get_guild(entry['guildID'])
-                break
+            for name in entry['ownerNames']:
+                if userName.lower() == name.lower():
+                    ctx.guild = bot.get_guild(entry['guildID'])
+                    break
+        ctx.bot = bot
         ctx.internal = internal
         ctx.originalCtx = originalCtx
         ctx.userName = userName
         # if no guild was associated with the external user
-        if ctx.guild == None:
+        if not ctx.guild:
+            await ctx.send("This command can only be used by a discord server owner.")
             raise discord.ext.commands.CheckFailure(message="This command can only be used by a discord server owner.")
         return ctx
 
@@ -635,8 +637,7 @@ async def sendAllConfig(ctx, mode):
                     if key != 'announcedVideos' and key != 'discordGuild' and key != 'leaseSeconds' and key != 'time' and entry[key] != 'default':
                         message += key + ': ``' + str(entry[key]) + '``\n'
 
-    if ctx.internal:
-        await ctx.send(message)
+    await ctx.send(message)
 
 async def sendTwitchChannelConfig(ctx, channel):
     message = "\n**Twitch Channel Configuration**\n"
@@ -747,8 +748,9 @@ async def on_command_error(ctx, error):
 
     if hasattr(ctx, 'internal'):
         if not ctx.internal:
-            print("This an external command, my guy. We gotta raise another error or something maybe? Somehow pass this shit back.")
-            return
+            print("Error in external (twitch) command through discord: " + type(error).__name__ + ' Error: ' + str(error))
+            errorResponse = '**' + type(error).__name__ + ' Error:** *' + str(error) + '*\nSome arguments are case-sensitive. Use ``' + ctx.prefix + 'help ' + ctx.command.name + '`` for more information on this command.```' + ctx.prefix + ctx.command.name + ' ' + ctx.command.signature + '```'
+            return await ctx.send(errorResponse)
     if hasattr(ctx, 'originalCtx'):
         ctx = ctx.originalCtx
 
@@ -1096,8 +1098,7 @@ async def configure(ctx, option, value=None):
             result = option + ' for your server "'+ ctx.guild.name +'" is: ``' + str(await converter.convert(ctx, value)) + ' (ID: ' + value + ')' + "``\nI hope that makes y-y-you happier than it makes me."
         else:
             result = option + ' for your server "'+ ctx.guild.name +'" is: ``' + value + "``\nI hope that makes y-y-you happier than it makes me."
-        if ctx.internal:
-            await ctx.send(result)
+        await ctx.send(result)
         return
     
     if converter:
@@ -1118,13 +1119,16 @@ async def configure(ctx, option, value=None):
 
     config.update({option: valueID}, query.guildID == ctx.guild.id)
     result = option + ' for your server "'+ ctx.guild.name +'" has been set to: ``' + str(value) + "``\nMaybe these guys will listen to w-w-what you have to say now? Just kidding, who cares? I'm sorry. I-I-I care."
-    if ctx.internal:
-        await ctx.send(result)
+    await ctx.send(result)
 
 
 @bot.command(name='ping', help='Just responds with "pong!" to test if MAX is alive or not.')
-async def ping(ctx):
+async def ping(ctx, extra="neh", pig="nah"):
+    ctx = await modifyContext(ctx)
+
     await ctx.send('pong!')
+    await ctx.send(extra)
+    await ctx.send(pig)
 
 @bot.command(name='say', rest_is_raw=True, help="""Allows you to speak through MAX on your server. Use it in a DM with MAX so that others don't see your command!
 
@@ -1149,8 +1153,7 @@ async def say(ctx, channel, notifyRole, *, message):
 
     await MAXMessageChannel(channel, notifyRole, message)
     result = "I have presented the unwashed masses with your g-g-glorious message. I can't promise they'll be ha-ha-happy about it, though."
-    if ctx.internal:
-        await ctx.send(result)
+    await ctx.send(result)
     return True
 
 @bot.command(name='badinternet', help="""Toggles announce spam protection on/off, or provide a number to change delay length (default: 30).
@@ -1183,7 +1186,7 @@ async def joinrole(ctx):
         await ctx.send('giveStreamRoleOnJoin has been enabled. Current streamRole is: ' + str(ctx.guild.get_role(config.get(query.guildID == ctx.guild.id)['streamRole'])) + '.')
 
 
-@bot.command(name='twitch', help="""Add twitch streams to announce, per-stream announcement roles, and their announcement schedules.
+@bot.command(name='twitch', rest_is_raw=True, help="""Add twitch streams to announce, per-stream announcement roles, and their announcement schedules.
 
     **channelName:**
         The twitch stream to add or modify the schedule for. Don't specify any additional  options to see the current schedule for all streams you have added before. Don't specify a ``schedule`` when adding a stream for the first time to use the default schedule of ``always``. Don't specify an ``announceRole`` or a ``schedule`` when adding a stream for the first time to use the defaults (which is the server's streamRole and a schedule of ``always``). 
@@ -1205,6 +1208,9 @@ async def joinrole(ctx):
 async def twitch(ctx, channelName=None, announceRole=None, *, schedule=None):
     ctx = await modifyContext(ctx)
     
+    if schedule:
+        schedule = schedule.strip()
+
     if not channelName and not announceRole and not schedule:
         await sendAllConfig(ctx, 'twitch')
     elif channelName and not announceRole and not schedule:

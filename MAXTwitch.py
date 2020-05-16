@@ -234,6 +234,33 @@ async def notifyChannels(response):
 async def event_command_error(ctx, error):
     # ignore command not found errors
     if type(error) == twitchio.ext.commands.errors.CommandNotFound:
+        argsList = ctx.message.clean_content.split(" ")
+        twitchCommand = argsList[0]
+        args = argsList[1:]
+        for command in MAXDiscord.bot.commands:
+            if command.name == twitchCommand:
+                if command.rest_is_raw:
+                    # -2 because it must have ctx as a param, and the last param must be the "collector" param for rest is raw
+                    numParams = len(command.params)-2
+                    if len(args) > numParams:
+                        # there are more arguments than the num positional parameters, so recreate
+                        # removes the prefix, the command name, and the space from the command
+                        newContent = ctx.content[len(ctx.prefix)+len(twitchCommand)+1:]
+                        # newContent now has just the arguments and the kwarg
+                        newArgs = newContent.split(" ")[:numParams]
+                        kwargText = " ".join(newContent.split(" ")[numParams:])
+                        kwarg = {next(reversed(command.params)): kwargText}
+                        try:
+                            await getattr(MAXDiscord, command.name)(ctx, *newArgs, **kwarg)
+                        except Exception as error:
+                            await ctx.send(type(error).__name__ + ' Error: ' + str(error))
+                        return
+                else:
+                    try:
+                        await getattr(MAXDiscord, command.name)(ctx, *args)
+                    except Exception as error:
+                        await ctx.send(type(error).__name__ + ' Error: ' + str(error))
+                    return
         return
 
 @bot.event
@@ -266,8 +293,6 @@ async def event_ready():
 
 
 
-@bot.command(name='test')
-async def test(ctx):
-    print('test')
-    await ctx.send(f'Hello {ctx.author.name}!')
-    print('test2')
+@bot.command(name='help')
+async def help(ctx):
+    await ctx.send('Commands: ' + ", ".join(bot.commands) + ". Link MAX using !configure twitchOwnerName <name> from Discord to use Discord commands as well.")
