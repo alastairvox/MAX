@@ -146,7 +146,7 @@ async def twitchWS():
                                     
                                     if rewardData['redemption']['reward']['title'] == monitoredReward:
                                         # check if strimmer is live, if not send a message
-                                        # streamLive = True 57717183
+                                        # streamLive = True
                                         streamLive = await MAXTwitch.bot.get_stream(channel=channelID)
                                         if streamLive:
                                             loop = asyncio.get_event_loop()
@@ -213,7 +213,7 @@ async def spotifyAuth(request):
     discordGuild = int(request.match_info['discordGuild'])
     spotifyEntry = spotifyConfig.get(query.discordGuild == discordGuild)
     if spotifyEntry:
-        raise aiohttp.web.HTTPTemporaryRedirect("https://accounts.spotify.com/authorize?client_id="+auth.get(query.name=='spotify')['clientID']+"&response_type=code&redirect_uri="+generalConfig.get(query.name == 'callback')['value']+"spotify/callback&state="+str(discordGuild)+"&scope=user-read-playback-state user-modify-playback-state user-read-currently-playing user-read-recently-played")
+        raise aiohttp.web.HTTPTemporaryRedirect("https://accounts.spotify.com/authorize?client_id="+auth.get(query.name=='spotify')['clientID']+"&response_type=code&redirect_uri="+generalConfig.get(query.name == 'callback')['value']+"spotify/callback&state="+str(discordGuild)+"&scope=user-read-playback-state user-modify-playback-state user-read-currently-playing user-read-recently-played user-read-private")
     else:
         return aiohttp.web.Response(text="""<div style="height: 100%; display: flex; justify-content: center; align-items: center"><div><b>Error: You must first call MAX's "spotify" command to enable authorization for your server.</b></div></div>""", content_type="text/html")
 
