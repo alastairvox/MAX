@@ -826,6 +826,17 @@ async def on_member_join(member):
 # ---------- COMMANDS ---------------------------------------------------------------------------------------------------------
 
 
+@bot.command(name='deleteoffline', help="""Toggle wether announcements are deleted once a stream goes offline or remain but get edited to state the stream is offline and include the duration of the stream.""")
+async def deleteoffline(ctx):
+    ctx = await modifyContext(ctx)
+
+    if config.get(query.guildID == ctx.guild.id)['deleteAnnouncements']:
+        config.update({'deleteAnnouncements': False}, query.guildID == ctx.guild.id)
+        await ctx.send('Announcements will now be removed when your stream goes offline.')
+    else:
+        config.update({'deleteAnnouncements': True}, query.guildID == ctx.guild.id)
+        await ctx.send("Announcements will now be edited to say the stream is offline and include the stream's duration when your stream goes offline.")
+
 # @bot.command(name='test', rest_is_raw=True)
 # async def test(ctx, *, song):
 #     ctx = await modifyContext(ctx)
