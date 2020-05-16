@@ -250,15 +250,19 @@ async def event_command_error(ctx, error):
                         newArgs = newContent.split(" ")[:numParams]
                         kwargText = " ".join(newContent.split(" ")[numParams:])
                         kwarg = {next(reversed(command.params)): kwargText}
+                        print('Discord command', '"'+ twitchCommand +'"','invoked by', str(ctx.author.name), '('+ str(ctx.author.id) +')', 'on channel "' + str(ctx.channel.name) + '".' if not ctx.channel == None else 'in private message.')
                         try:
                             await getattr(MAXDiscord, command.name)(ctx, *newArgs, **kwarg)
                         except Exception as error:
+                            print(type(error).__name__ + ' Error: ' + str(error))
                             await ctx.send(type(error).__name__ + ' Error: ' + str(error))
                         return
                 else:
+                    print('Discord command', '"'+ twitchCommand +'"','invoked by', str(ctx.author.name), '('+ str(ctx.author.id) +')', 'on channel "' + str(ctx.channel.name) + '".' if not ctx.channel == None else 'in private message.')
                     try:
                         await getattr(MAXDiscord, command.name)(ctx, *args)
                     except Exception as error:
+                        print(type(error).__name__ + ' Error: ' + str(error))
                         await ctx.send(type(error).__name__ + ' Error: ' + str(error))
                     return
         return
