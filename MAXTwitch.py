@@ -122,11 +122,14 @@ async def getChannelsToCheck():
     # find every channel
     for entry in config.all():
         newAnnounceSchedule = copy.copy(entry['announceSchedule'])
+        announceTimes = entry.get('announceTimes')
+        timeZone = discordConfig.get(query.guildID == entry['discordGuild'])['timeZone']
         # remove the schedule dates that have passed
         for day in entry['announceSchedule']:
             if (day != 'once') and (day != 'always') and (day not in dayNames) and (dateutil.parser.parse(day).date() < datetime.date.today()):
                 try:
                     newAnnounceSchedule.remove(day)
+                    if announceTimes: announceTimes.pop(day, None)
                 except ValueError:
                     continue
         if newAnnounceSchedule == [] and entry['announcement'] == 'none':
@@ -135,24 +138,55 @@ async def getChannelsToCheck():
             continue
         elif newAnnounceSchedule != entry['announceSchedule']:
             # update schedule
-            config.update({'announceSchedule': newAnnounceSchedule}, (query.twitchChannel == entry['twitchChannel']) & (query.discordGuild == entry['discordGuild']))
+            config.update({'announceSchedule': newAnnounceSchedule, 'announceTimes': announceTimes}, (query.twitchChannel == entry['twitchChannel']) & (query.discordGuild == entry['discordGuild']))
+        
         if entry['twitchChannel'] in channels:
             continue    # starts loop again with the next iteration, so skips all the date checking since already added
         if entry['announcement'] != 'none':
             channels.append(entry['twitchChannel'])
             continue    # starts loop again with the next iteration, so skips all the date checking since already added
         for date in entry['announceSchedule']:
+            timePeriods = []
             if date == 'always' or date == 'once':
-                channels.append(entry['twitchChannel'])
-                break
+                if announceTimes:
+                    if date == 'always' and announceTimes.get('always'):
+                        timePeriods = announceTimes['always']
+                    elif date == 'once' and announceTimes.get('once'):
+                        timePeriods = announceTimes['once']
+
+                    if timePeriods:
+                        for period in timePeriods:
+                            if await MAXDiscord.currentlyBetweenTimePeriod(period, timeZone):
+                                channels.append(entry['twitchChannel'])
+                                break
+                    else:
+                        channels.append(entry['twitchChannel'])
+                        break
+                else:
+                    channels.append(entry['twitchChannel'])
+                    break
             else:
                 today = datetime.date.today()
                 if date in dayNames and dayNames.index(date) == today.weekday():
-                    channels.append(entry['twitchChannel'])
-                    break
-                if today == dateutil.parser.parse(date).date():
-                    channels.append(entry['twitchChannel'])
-                    break
+                    if announceTimes and announceTimes.get(date):
+                        timePeriods = announceTimes[date]
+                        for period in timePeriods:
+                            if await MAXDiscord.currentlyBetweenTimePeriod(period, timeZone):
+                                channels.append(entry['twitchChannel'])
+                                break
+                    else:
+                        channels.append(entry['twitchChannel'])
+                        break
+                elif today == dateutil.parser.parse(date).date():
+                    if announceTimes and announceTimes.get(date):
+                        timePeriods = announceTimes[date]
+                        for period in timePeriods:
+                            if await MAXDiscord.currentlyBetweenTimePeriod(period, timeZone):
+                                channels.append(entry['twitchChannel'])
+                                break
+                    else:
+                        channels.append(entry['twitchChannel'])
+                        break
     for entry in entriesToRemove:
         config.remove((query.twitchChannel == entry['twitchChannel']) & (query.discordGuild == entry['discordGuild']))
     return channels

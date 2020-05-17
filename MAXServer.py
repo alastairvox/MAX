@@ -50,6 +50,7 @@ connectedTwitchWS = None
 lastTwitchWSPingReturned = False
 
 
+
 # ---------- FUNCTIONS --------------------------------------------------------------------------------------------------------
 #       ##### ##                                                                                    
 #    ######  /### /                                           #                                     
@@ -71,6 +72,7 @@ lastTwitchWSPingReturned = False
 # ---------- FUNCTIONS --------------------------------------------------------------------------------------------------------
 
 
+
 async def keepTwitchWSAlive():
     while True:
         await asyncio.sleep(259) #259
@@ -84,7 +86,6 @@ async def keepTwitchWSAlive():
                 await connectedTwitchWS.close()
         else:
             continue
-
 
 async def subscribeTwitchTopic():
     while not MAXTwitch.bot.http.token:

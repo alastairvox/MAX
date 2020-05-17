@@ -175,6 +175,44 @@ bot = discord.ext.commands.Bot(command_prefix=getGuildPrefix, case_insensitive=T
 
 
 
+async def currentlyBetweenTimePeriod(timePeriod, timeZone):
+    timeZone = pytz.timezone(timeZone)
+    timeNow = datetime.datetime.now(timeZone).timetz()
+
+    startTime, endTime = await validateTimePeriod(timePeriod, timeZone)
+
+    return startTime <= timeNow <= endTime
+
+# returns startTime, endTime or raises BadArgument
+async def validateTimePeriod(timePeriod, timeZone):
+    if type(timeZone) == str:
+        timeZone = pytz.timezone(timeZone)
+
+    def timeFail():
+        raise discord.ext.commands.BadArgument(message='The time period "``' + '-'.join(timePeriod) + '``" is not a valid time period. Make sure you are entering the time period without spaces, in 24 hour format with a dash separating the two times, and with the start time first and the end time last.')
+
+    # check for valid time
+    timePeriod = timePeriod.split('-')
+
+    if not len(timePeriod) == 2:
+        timeFail()
+
+    startTime = timePeriod[0].split(':')
+    if not len(startTime) == 2:
+        timeFail()
+    startTime = datetime.time(hour=int(startTime[0]), minute=int(startTime[1]), tzinfo=timeZone)
+    
+    endTime = timePeriod[1].split(':')
+    if not len(endTime) == 2:
+        timeFail()
+    endTime = datetime.time(hour=int(endTime[0]), minute=int(endTime[1]), tzinfo=timeZone)
+
+    if not startTime < endTime:
+        raise discord.ext.commands.BadArgument(message='The time "``' + timePeriod[0] + '``" does not come before the time "``' + timePeriod[1] + '``". Make sure you are entering the time period without spaces, in 24 hour format with a dash separating the two times, and with the start time first and the end time last.')
+
+    # compare to datetime.datetime.now(timeZone).timetz()
+    return startTime, endTime
+
 async def announceYoutubeUpload(guildID, xmlBytes):
     tree = lxml.etree.fromstring(xmlBytes)
     if tree.find('entry', tree.nsmap) is None:
@@ -502,6 +540,7 @@ async def removeAnnouncement(discordGuild, announcement, twitchChannel):
     twitchChannelConfig = twitchConfig.get((query.twitchChannel == twitchChannel.lower()) & (query.discordGuild == discordGuild))
     offlineURL = twitchChannelConfig['offlineURL']
     announceSchedule = twitchChannelConfig['announceSchedule']
+    announceTimes = twitchChannelConfig.get('announceTimes')
     # get discord objects
     guild = bot.get_guild(discordGuild)
     announceChannel = guild.get_channel(announceChannel)
@@ -561,18 +600,24 @@ async def removeAnnouncement(discordGuild, announcement, twitchChannel):
     else:
         if announceSchedule[0] == 'once':
             announceSchedule.pop(0)
+            # removes the defined schedule times for 'once' if any exist
+            if announceTimes: announceTimes.pop('once', None)
         # remove the schedule dates that have passed
         newAnnounceSchedule = []
         for entry in announceSchedule:
+            # if the day is still to come (i think dateutil parser always defaults to parsing a day name as the next future time that day occurs, or today)
             if dateutil.parser.parse(entry).date() >= datetime.date.today():
                 newAnnounceSchedule.append(entry)
+            else:
+                # removes the defined schedule times for the schedule option if any exist since the day has passed
+                if announceTimes: announceTimes.pop(entry, None)
         announceSchedule = newAnnounceSchedule
         if announceSchedule == []:
             twitchConfig.remove((query.twitchChannel == twitchChannel.lower()) & (query.discordGuild == discordGuild))
             return
 
     # reset the announcement holder
-    twitchConfig.update({'announcement' : "none", 'announceSchedule': announceSchedule}, (query.twitchChannel == twitchChannel.lower()) & (query.discordGuild == discordGuild))
+    twitchConfig.update({'announcement' : "none", 'announceSchedule': announceSchedule, 'announceTimes': announceTimes}, (query.twitchChannel == twitchChannel.lower()) & (query.discordGuild == discordGuild))
     if twitchChannelConfig.get('ended'):
         twitchConfig.update(tinydb.operations.delete('ended'), (query.twitchChannel == twitchChannel.lower()) & (query.discordGuild == discordGuild))
 
@@ -637,23 +682,6 @@ async def sendAllConfig(ctx, mode):
                     if key != 'announcedVideos' and key != 'discordGuild' and key != 'leaseSeconds' and key != 'time' and entry[key] != 'default':
                         message += key + ': ``' + str(entry[key]) + '``\n'
 
-    await ctx.send(message)
-
-async def sendTwitchChannelConfig(ctx, channel):
-    message = "\n**Twitch Channel Configuration**\n"
-    for key in channel:
-        if key != "profileURL" and key != "offlineURL" and key != "discordGuild":
-            if key == 'announcement' and channel[key] != 'none':
-                converter = discord.ext.commands.MessageConverter()
-                value = str(config.get(query.guildID == ctx.guild.id)['announceChannel']) + '-' + str(channel[key])
-                value = await converter.convert(ctx, value)
-                message += key + ': ' + value.jump_url + '\n'
-            elif key == 'announceRole' and channel[key] not in specialRoles:
-                converter = discord.ext.commands.RoleConverter()
-                value = str(await converter.convert(ctx, str(channel[key])))
-                message += key + ': ``' + value + '``\n'
-            else:
-                message += key + ': ``' + str(channel[key]) + '``\n'
     await ctx.send(message)
 
 
@@ -824,6 +852,78 @@ async def on_member_join(member):
 #      ######/    ######     ###  ###  ###   ###  ###  ### ####/ ##   ###   ###  ####/   / #### /   
 #        ###       ####       ###  ###  ###   ###  ###  ### ###   ##   ###   ###  ###       ###/    
 # ---------- COMMANDS ---------------------------------------------------------------------------------------------------------
+
+
+
+@bot.command(name='twitchtimes', rest_is_raw=True, help ="""Restrict a configured twitch stream announcement schedule to a specific time in your server's timezone.
+
+    This command will let you set a specific announce time period (relative to the timezone you set for your server using the ``configure timezone`` command, default is ``US/Central``) during the day of a scheduled twitch stream. For example, if you have defined a twitch stream using the following command ``twitch twitchChannel streamRole Sun`` then MAX will normally announce that stream any time it goes live on Sunday. However, if you use this command as follows ``twitchtimes twitchChannel 21:00-23:00 Sun`` the stream will only be announced if it starts between 9pm and 11pm on Sundays. You can define multiple time periods for each schedule option (e.g. using both ``twitchtimes twitchChannel 10:29-12:46 Sun`` and ``twitchtimes twitchChannel 21:00-23:00 Sun`` will cause the stream to be announced if it goes live on Sundays between the periods of 10:29am-12:46pm and 9pm-11pm).
+
+    **channelName:**
+        The name of the twitch channel you configured a schedule for and want to restrict the announcement time of. You can only use a twitch channel that you have already configured with the ``twitch`` command.
+
+    **timePeriod:**
+        The time period to restrict the given schedule option to. This uses the timezone you configured for your server using the ``configure timezone`` command, default is ``US/Central``. This command must be entered WITHOUT SPACES, in 24 hour format with a dash separating the two times, and with the start time first and the end time last. Entering a time that you have already configured will instead remove the time period from the list. A properly formatted time period looks like: 
+        ``21:30-23:30``
+
+    **scheduleOption:**
+        The schedule option you want to restrict the time period of. You can only specify schedule options that have already been configured for the specified channel via the ``twitch`` command. You can only change a single schedule option at a time. Valid options are:
+        ``always``
+        ``once``
+        ``Mon``, ``Tue``, ``Wed``, ``Thu``, ``Fri``, ``Sat``, or ``Sun``
+        ``an un-ambiguous date`` - like ``January 1 2021``""")
+async def twitchtimes(ctx, channelName, timePeriod, *, scheduleOption):
+    ctx = await modifyContext(ctx)
+
+    userConfigEntry = config.get(query.guildID == ctx.guild.id)
+    userTimeZone = userConfigEntry['timeZone']
+    
+    twitchEntry = twitchConfig.get((query.twitchChannel == channelName.lower()) & (query.discordGuild == ctx.guild.id))
+    if not twitchEntry:
+        raise discord.ext.commands.BadArgument(message='There is no configured twitch channel for your server with the name "``'+ str(channelName) +'``". Make sure you have added it using the ``twitch`` command and have spelled it correctly.')
+
+    announceSchedule = twitchEntry['announceSchedule']
+    
+    # check for valid schedule option
+    scheduleOption = scheduleOption.strip().lower()
+
+    if scheduleOption == 'always' or scheduleOption == 'once' or scheduleOption in dayNames:
+        pass
+    elif scheduleOption in fullDayNames:
+        scheduleOption = dayNames[fullDayNames.index(scheduleOption)]
+    else:
+        try:
+            scheduleOption = dateutil.parser.parse(scheduleOption).date().strftime("%B %#d %Y")
+        except:
+            raise discord.ext.commands.BadArgument(message='The twitch channel specified does not have "``'+ str(scheduleOption) +'``" in its schedule for your server. Make sure you have added it using the ``twitch`` command and have spelled the schedule option correctly.')
+    
+    if not scheduleOption in announceSchedule:
+        raise discord.ext.commands.BadArgument(message='The twitch channel specified does not have "``'+ str(scheduleOption) +'``" in its schedule for your server. Make sure you have added it using the ``twitch`` command and have spelled the schedule option correctly.')
+
+    # check for valid time
+    await validateTimePeriod(timePeriod, userTimeZone)
+
+    # check if the time period has already been entered
+    announceTimes = twitchEntry.get('announceTimes')
+    if announceTimes:
+        oldTimePeriods = announceTimes.get(scheduleOption)
+        if oldTimePeriods and timePeriod in oldTimePeriods:
+            announceTimes[scheduleOption].remove(timePeriod)
+            twitchConfig.update({'announceTimes': announceTimes}, (query.twitchChannel == channelName.lower()) & (query.discordGuild == ctx.guild.id))
+            await ctx.send('The time period "``'+ timePeriod +'``" for the schedule option "``'+ scheduleOption +'``" has been removed from the channel "``'+ channelName +'``".')
+            await sendAllConfig(ctx, 'twitch')
+            return
+        elif oldTimePeriods:
+            announceTimes[scheduleOption].append(timePeriod)
+        else:
+            announceTimes[scheduleOption] = [timePeriod]
+    else:
+        announceTimes = {scheduleOption: [timePeriod]}
+
+    twitchConfig.update({'announceTimes': announceTimes}, (query.twitchChannel == channelName.lower()) & (query.discordGuild == ctx.guild.id))
+    await ctx.send('The time period "``'+ timePeriod +'``" for the schedule option "``'+ scheduleOption +'``" has been applied to the channel "``'+ channelName +'``".')
+    await sendAllConfig(ctx, 'twitch')
+    return
 
 
 @bot.command(name='deleteoffline', help="""Toggle wether announcements are deleted once a stream goes offline or remain but get edited to state the stream is offline and include the duration of the stream.""")
@@ -1233,7 +1333,7 @@ async def twitch(ctx, channelName=None, announceRole=None, *, schedule=None):
             await ctx.send("Twitch channel ``" + channelName + "`` successfully added.")
             await sendAllConfig(ctx, 'twitch')
         else:
-            await sendTwitchChannelConfig(ctx, channel)
+            await sendAllConfig(ctx, 'twitch')
     elif channelName and announceRole and not schedule:
         channel = twitchConfig.get((query.twitchChannel == channelName.lower()) & (query.discordGuild == ctx.guild.id))
         # get/check valid role on server
@@ -1260,7 +1360,7 @@ async def twitch(ctx, channelName=None, announceRole=None, *, schedule=None):
                     twitchConfig.update(tinydb.operations.delete('announceRole'), (query.twitchChannel == channelName.lower()) & (query.discordGuild == ctx.guild.id))
             channel = twitchConfig.get((query.twitchChannel == channelName.lower()) & (query.discordGuild == ctx.guild.id))
             await ctx.send("Twitch channel ``" + channelName + "`` role successfully updated.")
-            await sendTwitchChannelConfig(ctx, channel)
+            await sendAllConfig(ctx, 'twitch')
     else:
         # get/check valid role on server
         if announceRole not in specialRoles:
@@ -1316,16 +1416,19 @@ async def twitch(ctx, channelName=None, announceRole=None, *, schedule=None):
         else:
             # update the schedule of the channel cause it already exists!! oh noooo
             oldSchedule = channel['announceSchedule']
+            announceTimes = channel.get('announceTimes')
             optionsToRemove = []
             for option in announceSchedule:
                 if option in oldSchedule:
                     optionsToRemove.append(option)
+                    if announceTimes: announceTimes.pop(option, None)
             
             if oldSchedule[0] == 'always' and 'once' in announceSchedule:
                 oldSchedule.remove('always')
+                if announceTimes: announceTimes.pop('always', None)
             elif oldSchedule[0] == 'once' and 'always' in announceSchedule:
                 oldSchedule.remove('once')
-            
+                if announceTimes: announceTimes.pop('once', None)
             for option in optionsToRemove:
                 announceSchedule.remove(option)
                 oldSchedule.remove(option)
@@ -1345,16 +1448,16 @@ async def twitch(ctx, channelName=None, announceRole=None, *, schedule=None):
                     announceSchedule.insert(0, 'once')
                 
                 if announceRole != 'default':
-                    twitchConfig.update({"announceSchedule": announceSchedule, "announceRole": announceRole}, (query.twitchChannel == channelName.lower()) & (query.discordGuild == ctx.guild.id))
+                    twitchConfig.update({"announceSchedule": announceSchedule, "announceTimes": announceTimes, "announceRole": announceRole}, (query.twitchChannel == channelName.lower()) & (query.discordGuild == ctx.guild.id))
                 else:
                     # user asking for the default stream role
                     if channel.get('announceRole'):
                         # stream had a custom role override set before so delete it
                         twitchConfig.update(tinydb.operations.delete('announceRole'), (query.twitchChannel == channelName.lower()) & (query.discordGuild == ctx.guild.id))
-                    twitchConfig.update({"announceSchedule": announceSchedule}, (query.twitchChannel == channelName.lower()) & (query.discordGuild == ctx.guild.id))
+                    twitchConfig.update({"announceSchedule": announceSchedule, "announceTimes": announceTimes}, (query.twitchChannel == channelName.lower()) & (query.discordGuild == ctx.guild.id))
                 await ctx.send("Twitch channel ``" + channelName + "`` announce schedule successfully updated.")
                 channel = twitchConfig.get((query.twitchChannel == channelName.lower()) & (query.discordGuild == ctx.guild.id))
-                await sendTwitchChannelConfig(ctx, channel)
+                await sendAllConfig(ctx, 'twitch')
 
 @bot.command(name='notify', help="""Toggles whether or not you receive stream notifications on this server.""")
 async def notify(ctx):
