@@ -116,7 +116,7 @@ class MAXHelpCommand(discord.ext.commands.DefaultHelpCommand):
             commands = sorted(commands, key=lambda c: c.name) if self.sort_commands else list(commands)
             self.add_indented_commands(commands, heading='```'+category, max_size=max_size)
 
-        note = '```' + self.get_ending_note()
+        note = self.get_ending_note()
         if note:
             self.paginator.add_line(note)
 
@@ -854,7 +854,7 @@ async def on_member_join(member):
 # ---------- COMMANDS ---------------------------------------------------------------------------------------------------------
 
 
-@bot.command(name='song', help="""Tells you the song the streamer is currently listening to if they have authorized Spotify through the ``spotify`` command.""")
+@bot.command(name='song', help="""Tells you the song the streamer is currently listening to if they have authorized Spotify through the spotify command.""")
 async def song(ctx):
     guildID = None
     if type(ctx) == discord.ext.commands.Context:
@@ -974,16 +974,16 @@ async def twitchtimes(ctx, channelName, timePeriod, *, scheduleOption):
     return
 
 
-@bot.command(name='deleteoffline', help="""Toggle wether announcements are deleted once a stream goes offline or remain but get edited to state the stream is offline and include the duration of the stream.""")
+@bot.command(name='deleteoffline', help="""Toggle whether announcements are deleted once a stream goes offline or remain with an edit showing they are offline and their duration.""")
 async def deleteoffline(ctx):
     ctx = await modifyContext(ctx)
 
     if config.get(query.guildID == ctx.guild.id)['deleteAnnouncements']:
         config.update({'deleteAnnouncements': False}, query.guildID == ctx.guild.id)
-        await ctx.send('Announcements will now be removed when your stream goes offline.')
+        await ctx.send("Announcements will now be edited to show the stream is offline and include the stream's duration when it ends.")
     else:
         config.update({'deleteAnnouncements': True}, query.guildID == ctx.guild.id)
-        await ctx.send("Announcements will now be edited to say the stream is offline and include the stream's duration when your stream goes offline.")
+        await ctx.send("Announcements will now be removed when your stream goes offline.")
 
 # @bot.command(name='test', rest_is_raw=True)
 # async def test(ctx, *, song):
@@ -1017,7 +1017,7 @@ async def spotify(ctx, *, rewardName):
     await ctx.author.send("Follow the prompts at the following link to authorize MAX to control Spotify:\n<"+ generalConfig.get(query.name == 'callback')['value'] + "spotify/auth/" + str(ctx.guild.id) + ">\n\nOnce you have done that, the next link will authorize MAX to see your Twitch channel points redemptions:\n<"+ generalConfig.get(query.name == 'callback')['value'] + "twitch/auth/" + str(ctx.guild.id)+">")
     await ctx.send("I've sent you two links in private messages, open them in your browser and follow the login prompts to authorize Spotify control and let MAX see Twitch channel points redemptions.")
 
-@bot.command(name='youtube', help="""Add or remove YouTube channels for new uploads/stream notifications, specify per-channel notification roles and announcement channels.
+@bot.command(name='youtube', help="""Add YouTube channels for new uploads/stream notifications, per-channel notification roles and announcement channels.```
 
     **youtubeChannel:**
         The channel ID you want to add notifications for. Cannot be a name (like ``DrawnActor``), must be a channel ID (like ``UC_0hyh6_G3Ct1k1EiqaorqQ``). You can get a channel ID by going to a video and clicking the profile name in the description to go back to the channel, then looking for the ID at the end of the channel URL.
