@@ -854,6 +854,54 @@ async def on_member_join(member):
 # ---------- COMMANDS ---------------------------------------------------------------------------------------------------------
 
 
+@bot.command(name='song', help="""Tells you the song the streamer is currently listening to if they have authorized Spotify through the ``spotify`` command.""")
+async def song(ctx):
+    guildID = None
+    if type(ctx) == discord.ext.commands.Context:
+        if not ctx.guild:
+            await ctx.send("Sorry, you can't use this command in private messages. Try it on a Discord server or a Twitch channel that I'm in.")
+            return
+        
+        guildID = ctx.guild.id
+    else:
+        for entry in config.all():
+            if entry.get('ownerNames') and entry['ownerNames'][0].lower() == ctx.channel.name.lower():
+                guildID = entry['guildID']
+                break
+
+    if not MAXSpotify.credentials.get(str(guildID)):
+        # message the channel aboud da eror
+        error = "Error: strimmer hasn't authorized MAX to control Spotify yet. This must be done through the 'spotify' command in discord."
+        print(error)
+        await ctx.send(error)
+        return
+
+    spotify = MAXSpotify.spotipy.Spotify(auth_manager=MAXSpotify.credentials[str(guildID)])
+    try:
+        songInfo = spotify.current_user_playing_track()
+    except Exception as error:
+        err = 'Error: There was an error while getting song info: ' + repr(error)
+        print(err)
+        await ctx.send(err)
+        return
+    
+    if songInfo:
+        trackName = ""
+        artistName = ""
+        albumName = ""
+
+        if songInfo.get('item'):
+            if songInfo['item'].get('name'):
+                trackName = '"' + str(songInfo['item']['name']) + '"'
+            if songInfo['item'].get('artists') and songInfo['item']['artists'][0].get('name'):
+                artistName = ' by ' + str(songInfo['item']['artists'][0]['name'])
+            if songInfo['item'].get('album') and songInfo['item']['album'].get('name'):
+                albumName = ' on "' + str(songInfo['item']['album']['name']) + '"'
+
+        return await ctx.send("Listening to " + trackName + artistName + albumName)
+    else:
+        return await ctx.send("The streamer is not listening to anything on Spotify.")
+
 
 @bot.command(name='twitchtimes', rest_is_raw=True, help ="""Restrict a configured twitch stream announcement schedule to a specific time in your server's timezone.
 

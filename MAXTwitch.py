@@ -333,4 +333,4 @@ async def event_ready():
 
 @bot.command(name='help')
 async def help(ctx):
-    await ctx.send('Commands: ' + ", ".join(bot.commands) + ". Link MAX using !configure twitchOwnerName <name> from Discord to use Discord commands as well.")
+    await ctx.send('Commands: ' + ", ".join(bot.commands) + ", song. You may also use any Discord commands.")

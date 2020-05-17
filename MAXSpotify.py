@@ -262,8 +262,6 @@ async def songRequest(discordGuild, song):
     print(msg)
     await MAXTwitch.messageLinkedTwitchChannel(discordGuild, msg)
 
-            
-
 async def spotifyPrepareAllConnections():
     authConfig = auth.get(query.name == 'spotify')
     for entry in config.all():
