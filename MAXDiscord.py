@@ -264,12 +264,17 @@ async def announceYoutubeUpload(guildID, xmlBytes):
             # use overrideChannel instead
             announceChannel = overrideChannel
     announceChannel = guild.get_channel(announceChannel)
-    botChannel = guild.get_channel(botChannel)
+
+    if botChannel != None:
+        botChannel = guild.get_channel(botChannel)
 
     # pass the text (xml, xml.etree.ElementTree?) and guildID to a discord function that parses out the author name, video title, URL (<link rel="alternate" href="), and the time published and then announces the stream if it finds a matching entry
     print('announcing', guildID, videoURL)
     # text content
-    message = "**" + channelName + " posted a video!**\nIf you don't want these notifications, go to " + botChannel.mention + " and type ``" + prefix + "notify``.\n**" + videoTitle + "** - " + videoURL
+    if (botChannel != None) and (streamRole not in specialRoles):
+        message = "**" + channelName + " posted a video!**\nIf you don't want these notifications, go to " + botChannel.mention + " and type ``" + prefix + "notify``.\n**" + videoTitle + "** - " + videoURL
+    else:
+        message = "**" + channelName + " posted a video!\n" + videoTitle + "** - " + videoURL
     await MAXMessageChannel(announceChannel, streamRole, message)
 
 
@@ -495,7 +500,8 @@ async def makeAnnouncement(discordGuild, info, game):
         streamRole = guild.get_role(streamRole)
 
     announceChannel = guild.get_channel(announceChannel)
-    botChannel = guild.get_channel(botChannel)
+    if botChannel != None:
+        botChannel = guild.get_channel(botChannel)
 
     # get date/convert date from UTC
     date = dateutil.parser.parse(info['started_at'])
@@ -505,7 +511,11 @@ async def makeAnnouncement(discordGuild, info, game):
     dateString = date.strftime("%#I:%M %p (%Z)")
 
     # text content
-    message = "**" + info['user_name'] + " is live on Twitch!**\nIf you don't want these notifications, go to " + botChannel.mention + " and type ``" + prefix + "notify``."
+    if (botChannel != None) and (streamRole not in specialRoles):
+        message = "**" + info['user_name'] + " is live on Twitch!**\nIf you don't want these notifications, go to " + botChannel.mention + " and type ``" + prefix + "notify``."
+    else:
+        message = "**" + info['user_name'] + " is live on Twitch!**"
+
 
     # embed content
     embed = discord.Embed()
@@ -638,9 +648,12 @@ async def sendAllConfig(ctx, mode):
                         converter = discord.ext.commands.UserConverter()
                         message += str(await converter.convert(ctx, str(entry[key])))
                     elif key == 'botChannel' or key == 'announceChannel':
-                        converter = discord.ext.commands.TextChannelConverter()
-                        value = await converter.convert(ctx, str(entry[key]))
-                        message += key + ': ' + value.mention + '\n'
+                        if entry[key] != None:
+                            converter = discord.ext.commands.TextChannelConverter()
+                            value = await converter.convert(ctx, str(entry[key]))
+                            message += key + ': ' + value.mention + '\n'
+                        else:
+                            message += key + ': ' + str(value) + '\n'
                     elif key == 'streamRole' and entry[key] not in specialRoles:
                         converter = discord.ext.commands.RoleConverter()
                         message += str(await converter.convert(ctx, str(entry[key])))
@@ -1214,7 +1227,7 @@ async def selfroles(ctx, role=None, roleChannel=None):
             ``prefix`` - the prefix (``!``, ``.``, ``-``, etc) that you want MAX to use for commands on your server.
             ``owner`` - the user (name or ID) that you want to be allowed to configure MAX or access sensitive commands.
             ``ownerTwitchName`` - the Twitch channel (name) for MAX to join as a chat bot (as MAX_BDT) so that you can use these commands and other twitch-specific commands from your Twitch chat. MAX will also message this channel about Spotify song requests and request errors if you have set that up (using the ``spotify`` command).
-            ``botChannel`` - the channel (name or ID) you want MAX to tell people to use commands in (when making announcements, etc).
+            ``botChannel`` - the channel (name or ID) you want MAX to tell people to use commands in (when making announcements, etc). Set this to ``none`` to disable the reminder on announcements.
             ``announceChannel`` - the channel (name or ID) you want MAX to make announcements in.
             ``streamRole`` - the role (name or ID) that you want MAX to @ mention for announcements and give to users when they join the server (can also be ``everyone``, ``here``, or ``none``). Since MAX keeps roles internally by ID, you don't have to use this if you have only changed the name of your previous stream role: just when you want to change it to a different role object that already exists.
             ``timeZone`` - the time zone you want MAX to use on announcements (defaults to US/Central). Must be from the following list: <https://gist.github.com/heyalexej/8bf688fd67d7199be4a1682b3eec7568>
@@ -1242,6 +1255,8 @@ async def configure(ctx, option, value=None):
     elif option == 'botchannel':
         option = 'botChannel'
         converter = discord.ext.commands.TextChannelConverter()
+        if value == "none" or value == "None":
+            converter = None
     elif option == 'announcechannel':
         option = 'announceChannel'
         converter = discord.ext.commands.TextChannelConverter()
@@ -1262,6 +1277,8 @@ async def configure(ctx, option, value=None):
     
     if converter:
         converted = await converter.convert(ctx, value)
+    elif option == 'botChannel':
+        value = None
     elif option == 'timeZone':
         try:
             pytz.timezone(value)
