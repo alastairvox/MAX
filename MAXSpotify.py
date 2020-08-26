@@ -288,3 +288,33 @@ async def getPlaying(discordGuild):
     spotify = spotipy.Spotify(auth_manager=credentials[discordGuild])
     playback = spotify.current_playback()
     print(playback)
+
+async def skipCurrentSong(discordGuild):
+
+    if not credentials.get(str(discordGuild)):
+        # message the channel aboud da eror
+        error = "Error: strimmer hasn't authorized MAX to control Spotify yet. This must be done through the 'spotify' command in discord."
+        print(error)
+        await MAXTwitch.messageLinkedTwitchChannel(discordGuild, error)
+        return
+
+    spotify = spotipy.Spotify(auth_manager=credentials[str(discordGuild)])
+
+    # if there are no songs in the request queue, skip the current song
+    if not requestedSongs.get(str(discordGuild)):
+        try:
+            spotify.next_track()
+            msg = "Song skipped!"
+            print(msg)
+            await MAXTwitch.messageLinkedTwitchChannel(discordGuild, msg)
+        except Exception as error:
+            err = 'Error: There was an error skipping: ' + repr(error)
+            print(err)
+            await MAXTwitch.messageLinkedTwitchChannel(discordGuild, err)
+        return
+    else:
+        # message the channel aboud da eror
+        error = "Error: Requested songs can't be skipped."
+        print(error)
+        await MAXTwitch.messageLinkedTwitchChannel(discordGuild, error)
+        return

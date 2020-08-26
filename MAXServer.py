@@ -155,6 +155,17 @@ async def twitchWS():
                                         else:
                                             print("Stream is offline, won't request.")
                                             await MAXTwitch.messageLinkedTwitchChannel(channelEntry['discordGuild'], "You can not redeem songs while the stream is offline. Goodbye cha-cha-channel points!")
+                                    elif rewardData['redemption']['reward']['title'] == "Skip Current Song":
+                                        # check if strimmer is live, if not send a message
+                                        streamLive = True
+                                        # streamLive = await MAXTwitch.bot.get_stream(channel=channelID)
+                                        if streamLive:
+                                            loop = asyncio.get_event_loop()
+                                            loop.create_task(MAXSpotify.songRequest(discordGuild=channelEntry['discordGuild'], song=rewardData['redemption']['user_input'].strip()))
+                                        else:
+                                            print("Stream is offline, won't request.")
+                                            await MAXTwitch.messageLinkedTwitchChannel(channelEntry['discordGuild'], "You can not redeem songs while the stream is offline. Goodbye cha-cha-channel points!")
+
                         elif msgJSON == successDict:
                             print("Twitch sent a success response, likely began listening to a channel successfully.")
                         else:

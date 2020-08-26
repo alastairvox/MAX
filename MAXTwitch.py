@@ -207,7 +207,10 @@ async def notifyChannels(response):
             # stream has no announcement but is in the list of live streams, so announce
             # get the index of the twitchChannel in the streamNames list and pass the response element (dict) thats at the same position in the response list as the name in streamNames list (cause its made from the response list)
             responseEntry = response[streamNames.index(twitchChannel)]
-            games.append(int(responseEntry['game_id']))
+            if responseEntry['game_id'].isdigit():
+                games.append(int(responseEntry['game_id']))
+            else:
+                games.append(responseEntry['game_id'])
             users.append(twitchChannel)
             streamsToAnnounce.append({'discordGuild': discordGuild, 'info': responseEntry})
         elif announcement != 'none' and twitchChannel not in streamNames:
@@ -232,7 +235,7 @@ async def notifyChannels(response):
             config.update({'profileURL': user.profile_image, 'offlineURL': user.offline_image}, query.twitchChannel == user.login.lower())
 
     for stream in streamsToAnnounce: 
-        game = {'name': 'No Game Selected'}
+        game = {'name': 'No Game or Unknown'}
         for gameResult in games:
             if stream['info']['game_id'] == gameResult['id']:
                 game = gameResult
