@@ -149,7 +149,12 @@ class MAXHelpCommand(discord.ext.commands.DefaultHelpCommand):
 description = "Ah, 'tis Max Headroom here, and I quote fro-fro-from the bard, Shakespeare, a writer:\n\n" \
             '*"I can performeth thine following commands:*'
 
-bot = discord.ext.commands.Bot(command_prefix=getGuildPrefix, case_insensitive=True, help_command=MAXHelpCommand(), description=description, fetch_offline_members=True)
+# subscribe to intents so that you can recieve information
+intents = discord.Intents.default()  # All but the two privileged ones
+intents.presences = True    # subs to presences, just in case lol
+intents.members = True      # Subscribe to the Members intent
+
+bot = discord.ext.commands.Bot(command_prefix=getGuildPrefix, intents=intents, case_insensitive=True, help_command=MAXHelpCommand(), description=description, fetch_offline_members=True)
 
 
 
