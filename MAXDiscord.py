@@ -729,6 +729,9 @@ async def sendAllConfig(ctx, mode):
 # on_raw_reaction_add(payload)
 @bot.event
 async def on_raw_reaction_add(payload):
+    if not payload.guild_id:
+        print('Ignoring reaction add in DMs with user ' + str(payload.user_id) + '. Member element is: ' + str(payload.member))
+        return
     roleGuild = bot.get_guild(payload.guild_id)
     roleMember = roleGuild.get_member(payload.user_id)
     if roleMember.id != bot.user.id:
@@ -750,6 +753,9 @@ async def on_raw_reaction_add(payload):
 
 @bot.event
 async def on_raw_reaction_remove(payload):
+    if not payload.guild_id:
+        print('Ignoring reaction add in DMs with user ' + str(payload.user_id) + '. Member element is: ' + str(payload.member))
+        return
     roleGuild = bot.get_guild(payload.guild_id)
     roleMember = roleGuild.get_member(payload.user_id)
     if roleMember.id != bot.user.id:
@@ -812,7 +818,8 @@ async def on_command_error(ctx, error):
     
     # Anything in ignored will return and prevent anything happening.
     if isinstance(error, ignored):
-        if isinstance(error, discord.ext.commands.CommandNotFound) and ctx.guild == None:
+        # disabling this to not confuse things for people using "modmail"
+        if isinstance(error, discord.ext.commands.CommandNotFound) and ctx.guild == None and True == False:
             # because we want command not found errors to be sent in PM
             await ctx.send('**' + type(error).__name__ + ' Error:** *' + str(error) + '*\nCommands in private messages do not use a prefix. Use ``help`` for more information on available commands.')
             return
