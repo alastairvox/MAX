@@ -205,7 +205,7 @@ async def songRequest(discordGuild, song):
     try:
         # check every second to see if playlist context has changed, or if the song being played is not in the list of requested song
         while True:
-            await asyncio.sleep(1)
+            await asyncio.sleep(3)
             state = spotify.current_playback()
             currentContext = None
             if state['context']:
