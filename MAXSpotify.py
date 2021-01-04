@@ -105,6 +105,7 @@ async def findSong(spotify, song):
         return error
     
     song = result['tracks']['items'][0]['uri'] if type(result['tracks']) == dict else result['tracks'][0]['uri']
+    print(song)
     return song
 
 
@@ -185,10 +186,14 @@ async def songRequest(discordGuild, song):
             print(error)
             await MAXTwitch.messageLinkedTwitchChannel(discordGuild, error)
         return
+    
+    # waiting 2 seconds after adding the spotify transition song to queue
+    await asyncio.sleep(2)
     spotify.add_to_queue(uri=song, device_id=deviceID)
     requestedSongs[str(discordGuild)] = [generalConfig.get(query.name == 'spotifyTransitionSong')['value']]
     requestedSongs[str(discordGuild)].append(song)
     if oldState:
+        await asyncio.sleep(1)
         spotify.add_to_queue(uri=oldTrack)
         if checkOldTrack:
             oldSongs[str(discordGuild)] = oldTrack
@@ -205,7 +210,7 @@ async def songRequest(discordGuild, song):
     try:
         # check every second to see if playlist context has changed, or if the song being played is not in the list of requested song
         while True:
-            await asyncio.sleep(3)
+            await asyncio.sleep(1)
             state = spotify.current_playback()
             currentContext = None
             if state['context']:
