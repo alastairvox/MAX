@@ -878,7 +878,9 @@ async def on_member_join(member):
 #        ###       ####       ###  ###  ###   ###  ###  ### ###   ##   ###   ###  ###       ###/    
 # ---------- COMMANDS ---------------------------------------------------------------------------------------------------------
 
-@bot.command(name='youtubetogether', help="""Turn a voice channel into a YouTube Together session (or specify 'Poker', 'Betrayal', or 'Fishington' for a different application)!""")
+
+
+@bot.command(name='together', help="""Turn a voice channel into a YouTube Together session (or specify 'Poker', 'Betrayal', or 'Fishington' for a different application)!""")
 async def youtubetogether(ctx, voiceChannel, alternateApplication=None):
         converter = discord.ext.commands.VoiceChannelConverter()
         voiceChannel = await converter.convert(ctx, voiceChannel)
@@ -894,7 +896,7 @@ async def youtubetogether(ctx, voiceChannel, alternateApplication=None):
             inviteID = MAXServer.createYouTubeTogether(voiceChannel.id)
 
         if inviteID:
-            return await ctx.send("Click here to start **YouTube Together** in", voiceChannel.name + ": <https://discord.gg/" + inviteID + ">")
+            return await ctx.send("Click here to start **YouTube Together** in " + str(voiceChannel.name) + ": <https://discord.gg/" + inviteID + ">")
         else:
             return await ctx.send("There was an error starting **YouTube Together**.")
 
