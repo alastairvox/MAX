@@ -878,6 +878,26 @@ async def on_member_join(member):
 #        ###       ####       ###  ###  ###   ###  ###  ### ###   ##   ###   ###  ###       ###/    
 # ---------- COMMANDS ---------------------------------------------------------------------------------------------------------
 
+@bot.command(name='youtubetogether', help="""Turn a voice channel into a YouTube Together session (or specify 'Poker', 'Betrayal', or 'Fishington' for a different application)!""")
+async def youtubetogether(ctx, voiceChannel, alternateApplication=None):
+        converter = discord.ext.commands.VoiceChannelConverter()
+        voiceChannel = await converter.convert(ctx, voiceChannel)
+
+        activities = {'poker': '755827207812677713', 'betrayal': '773336526917861400', 'fishington': '814288819477020702'}
+
+        if alternateApplication:
+            if alternateApplication.strip().lower() in activities:
+                inviteID = MAXServer.createYouTubeTogether(voiceChannel.id, activities[alternateApplication.strip().lower()])
+            else:
+                return await ctx.send("The only alternate applications I recognize are 'poker', 'betrayal', and 'fishington'. Try again, peas-for-brains.")
+        else:
+            inviteID = MAXServer.createYouTubeTogether(voiceChannel.id)
+
+        if inviteID:
+            return await ctx.send("Click here to start **YouTube Together** in", voiceChannel.name + ": <https://discord.gg/" + inviteID + ">")
+        else:
+            return await ctx.send("There was an error starting **YouTube Together**.")
+
 
 @bot.command(name='song', help="""Tells you the song the streamer is currently listening to if they have authorized Spotify through the spotify command.""")
 async def song(ctx):

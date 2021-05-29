@@ -71,6 +71,20 @@ lastTwitchWSPingReturned = False
 #   ##                                                                                              
 # ---------- FUNCTIONS --------------------------------------------------------------------------------------------------------
 
+async def createYouTubeTogether(channelID, altApp=None):
+    if altApp:
+        appID = altApp
+    else:
+        appID = "755600276941176913"
+
+    headers = {"Authorization": "Bot " + MAXDiscord.bot.http.token, "Content-Type": "application/json"}
+    async with session.post('https://discord.com/api/v8/channels/'+ str(channelID) +'/invites', headers=headers, json={'max_age': 86400, 'max_uses': 0, 'target_application_id': str(appID), 'target_type': 2, 'temporary': False, 'validate': None}) as resp:
+        invite = await resp.json()
+        if invite.error or not invite.code:
+            return None
+        else:
+            return invite.code
+
 
 
 async def keepTwitchWSAlive():
