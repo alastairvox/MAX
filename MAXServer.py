@@ -71,6 +71,8 @@ lastTwitchWSPingReturned = False
 #   ##                                                                                              
 # ---------- FUNCTIONS --------------------------------------------------------------------------------------------------------
 
+
+
 async def createYouTubeTogether(channelID, altApp=None):
     if altApp:
         appID = altApp
