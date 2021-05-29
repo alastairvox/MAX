@@ -883,22 +883,23 @@ async def on_member_join(member):
 @bot.command(name='together', rest_is_raw=True, help="""Turn a voice channel into a YouTube Together session (or specify 'Poker', 'Betrayal', or 'Fishington' for a different application)!""")
 async def youtubetogether(ctx, application, *, voiceChannel):
         converter = discord.ext.commands.VoiceChannelConverter()
-        voiceChannel = await converter.convert(ctx, voiceChannel)
+        voiceChannel = await converter.convert(ctx, voiceChannel.strip())
 
-        activities = {'youtube': '755600276941176913', 'poker': '755827207812677713', 'betrayal': '773336526917861400', 'fishington': '814288819477020702'}
+        activities = {'youtube': ['755600276941176913', 'Youtube Together'], 'poker': ['755827207812677713', 'Poker Night'], 'betrayal': ['773336526917861400', 'Betrayal.io'], 'fishington': ['814288819477020702', 'Fishington.io']}
 
         if application:
-            if application.strip().lower() in activities:
-                inviteID = MAXServer.createYouTubeTogether(voiceChannel.id, activities[application.strip().lower()])
+            application = application.strip().lower()
+            if application in activities:
+                inviteID = await MAXServer.createYouTubeTogether(voiceChannel.id, activities[application][0])
             else:
                 return await ctx.send("The only applications I recognize are 'youtube', 'poker', 'betrayal', and 'fishington'. Try again, peas-for-brains.")
         else:
             return await ctx.send("You must specify what application you want to start: 'youtube', 'poker', 'betrayal', and 'fishington' all work.")
 
         if inviteID:
-            return await ctx.send("Click here to start **YouTube Together** in " + str(voiceChannel.name) + ": <https://discord.gg/" + inviteID + ">")
+            return await ctx.send("Click here to start **" + activities[application][1] + "** in " + voiceChannel.name + ": <https://discord.gg/" + inviteID + ">")
         else:
-            return await ctx.send("There was an error starting **YouTube Together**.")
+            return await ctx.send("There was an error starting **" + activities[application][1] + "**.")
 
 
 @bot.command(name='song', help="""Tells you the song the streamer is currently listening to if they have authorized Spotify through the spotify command.""")
