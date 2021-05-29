@@ -80,10 +80,10 @@ async def createYouTubeTogether(channelID, altApp=None):
     headers = {"Authorization": "Bot " + MAXDiscord.bot.http.token, "Content-Type": "application/json"}
     async with session.post('https://discord.com/api/v8/channels/'+ str(channelID) +'/invites', headers=headers, json={'max_age': 86400, 'max_uses': 0, 'target_application_id': str(appID), 'target_type': 2, 'temporary': False, 'validate': None}) as resp:
         invite = await resp.json()
-        if invite.error or not invite.code:
+        if 'error' in invite and not 'code' in invite:
             return None
         else:
-            return invite.code
+            return invite['code']
 
 
 
