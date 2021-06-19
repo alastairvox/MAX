@@ -560,54 +560,71 @@ async def removeAnnouncement(discordGuild, announcement, twitchChannel):
     guild = bot.get_guild(discordGuild)
     announceChannel = guild.get_channel(announceChannel)
 
-    # get announcement message
-    announcement = await announceChannel.fetch_message(announcement)
+    # try except so that it can skip all this if announcement message cant be found
+    try:
+        # get announcement message
+        announcement = await announceChannel.fetch_message(announcement)
 
-    if badInternet:
-        utcTZ = pytz.timezone('UTC')       
-        # if the stream hasn't had its end time stored yet ('ended' key does not exist)
-        if not twitchChannelConfig.get('ended'):
-            twitchConfig.update({'ended': str(datetime.datetime.now(utcTZ))}, (query.twitchChannel == twitchChannel.lower()) & (query.discordGuild == discordGuild))
-            print('Delaying removal due to badInternet flag on "' + guild.name + '".')
-            return
-        # else if the difference between now and the time the stream actually ended is less than 1 hour
-        elif (datetime.datetime.now(utcTZ) - dateutil.parser.parse(twitchChannelConfig.get('ended'))) < datetime.timedelta(minutes=badInternetTime):
-            return
-        # otherwise, continue and delete/edit the announcement
+        if badInternet:
+            utcTZ = pytz.timezone('UTC')       
+            # if the stream hasn't had its end time stored yet ('ended' key does not exist)
+            if not twitchChannelConfig.get('ended'):
+                twitchConfig.update({'ended': str(datetime.datetime.now(utcTZ))}, (query.twitchChannel == twitchChannel.lower()) & (query.discordGuild == discordGuild))
+                print('Delaying removal due to badInternet flag on "' + guild.name + '".')
+                return
+            # else if the difference between now and the time the stream actually ended is less than the double ping delay time (badinternet)
+            elif (datetime.datetime.now(utcTZ) - dateutil.parser.parse(twitchChannelConfig.get('ended'))) < datetime.timedelta(minutes=badInternetTime):
+                return
+            # otherwise, continue and delete/edit the announcement
 
-    if deleteAnnouncements:
-        print('Removing announcement for ' + twitchChannel + '.')
-        await announcement.delete()
-    else:
-        announcement.content = announcement.content.replace('is live on Twitch!', 'is no longer live on Twitch.')
-
-        # get date/convert date from UTC
-        timeStarted = announcement.embeds[0].timestamp
-        newTZ = pytz.timezone(timeZone)
-        newTimeStarted = timeStarted.replace(tzinfo=pytz.utc).astimezone(newTZ)
-        timeStarted = newTZ.normalize(newTimeStarted) # .normalize might be unnecessary
-        if not twitchChannelConfig.get('ended'):
-            timeEnded = datetime.datetime.now(newTZ).strftime("%#I:%M %p (%Z)")
-            endedFooter = datetime.datetime.now(newTZ).strftime("%b %#d at %#I:%M %p (%Z)")
-            duration = datetime.datetime.now(newTZ) - timeStarted
+        if deleteAnnouncements:
+            print('Removing announcement for ' + twitchChannel + '.')
+            await announcement.delete()
         else:
-            timeEnded = dateutil.parser.parse(twitchChannelConfig.get('ended'))
-            newTimeEnded = timeEnded.replace(tzinfo=pytz.utc).astimezone(newTZ)
-            timeEnded = newTZ.normalize(newTimeEnded).strftime("%#I:%M %p (%Z)") # .normalize might be unnecessary
-            endedFooter = newTZ.normalize(newTimeEnded).strftime("%b %#d at %#I:%M %p (%Z)")
-            duration = dateutil.parser.parse(twitchChannelConfig.get('ended')) - timeStarted
+            announcement.content = announcement.content.replace('is live on Twitch!', 'is no longer live on Twitch.')
 
-        hours, remainder = divmod(duration.seconds, 3600)
-        minutes, seconds = divmod(remainder, 60)
-        duration = '{:2}h {:2}m {:2}s'.format(int(hours), int(minutes), int(seconds))
-        announcement.embeds[0].insert_field_at(index=1,name='Ended',value=timeEnded,inline=True)
-        announcement.embeds[0].insert_field_at(index=2,name='Duration',value=duration,inline=True)
-        announcement.embeds[0].set_field_at(index=3,name='Played',value=announcement.embeds[0].fields[3].value)
-        announcement.embeds[0].set_footer(text='Ended    •  ' + endedFooter + '\nStarted')
-        announcement.embeds[0].set_image(url=offlineURL.replace('-1920x1080', ''))
+            # get date/convert date from UTC
+            timeStarted = announcement.embeds[0].timestamp
+            newTZ = pytz.timezone(timeZone)
+            newTimeStarted = timeStarted.replace(tzinfo=pytz.utc).astimezone(newTZ)
+            timeStarted = newTZ.normalize(newTimeStarted) # .normalize might be unnecessary
+            if not twitchChannelConfig.get('ended'):
+                timeEnded = datetime.datetime.now(newTZ).strftime("%#I:%M %p (%Z)")
+                endedFooter = datetime.datetime.now(newTZ).strftime("%b %#d at %#I:%M %p (%Z)")
+                duration = datetime.datetime.now(newTZ) - timeStarted
+            else:
+                timeEnded = dateutil.parser.parse(twitchChannelConfig.get('ended'))
+                newTimeEnded = timeEnded.replace(tzinfo=pytz.utc).astimezone(newTZ)
+                timeEnded = newTZ.normalize(newTimeEnded).strftime("%#I:%M %p (%Z)") # .normalize might be unnecessary
+                endedFooter = newTZ.normalize(newTimeEnded).strftime("%b %#d at %#I:%M %p (%Z)")
+                duration = dateutil.parser.parse(twitchChannelConfig.get('ended')) - timeStarted
 
-        print('Editing announcement for ' + twitchChannel + ' to reflect offline state.')
-        await announcement.edit(content=announcement.content,embed=announcement.embeds[0])
+            hours, remainder = divmod(duration.seconds, 3600)
+            minutes, seconds = divmod(remainder, 60)
+            duration = '{:2}h {:2}m {:2}s'.format(int(hours), int(minutes), int(seconds))
+            announcement.embeds[0].insert_field_at(index=1,name='Ended',value=timeEnded,inline=True)
+            announcement.embeds[0].insert_field_at(index=2,name='Duration',value=duration,inline=True)
+            announcement.embeds[0].set_field_at(index=3,name='Played',value=announcement.embeds[0].fields[3].value)
+            announcement.embeds[0].set_footer(text='Ended    •  ' + endedFooter + '\nStarted')
+            announcement.embeds[0].set_image(url=offlineURL.replace('-1920x1080', ''))
+
+            print('Editing announcement for ' + twitchChannel + ' to reflect offline state.')
+            await announcement.edit(content=announcement.content,embed=announcement.embeds[0])
+
+    except discord.errors.NotFound:
+        print('Announcement no longer exists (deleted after announcing).')
+        if badInternet:
+            utcTZ = pytz.timezone('UTC')       
+            # if the stream hasn't had its end time stored yet ('ended' key does not exist)
+            if not twitchChannelConfig.get('ended'):
+                twitchConfig.update({'ended': str(datetime.datetime.now(utcTZ))}, (query.twitchChannel == twitchChannel.lower()) & (query.discordGuild == discordGuild))
+                print('Delaying removal due to badInternet flag on "' + guild.name + '".')
+                return
+            # else if the difference between now and the time the stream actually ended is less than the double ping delay time (badinternet)
+            elif (datetime.datetime.now(utcTZ) - dateutil.parser.parse(twitchChannelConfig.get('ended'))) < datetime.timedelta(minutes=badInternetTime):
+                return
+            # otherwise, continue and delete/edit the announcement
+        print('Removing stored reference to deleted announcement.')
     
     # update schedule
     if announceSchedule[0] == 'always':
