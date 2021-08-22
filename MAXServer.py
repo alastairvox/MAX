@@ -1,4 +1,4 @@
-import asyncio, inspect, datetime, json
+import asyncio, inspect, datetime, json, ssl
 import aiohttp
 import MAXShared, MAXDiscord, MAXTwitch, MAXYoutube, MAXSpotify
 from MAXShared import query, devFlag, auth, generalConfig, youtubeConfig, spotifyConfig, discordConfig, twitchConfig, dayNames, fullDayNames
@@ -41,7 +41,9 @@ async def on_shutdown(app):
 config = generalConfig
 
 routes = aiohttp.web.RouteTableDef()
+subroutes = aiohttp.web.RouteTableDef()
 app = aiohttp.web.Application()
+subapp = aiohttp.web.Application()
 app.on_startup.append(on_startup)
 app.on_shutdown.append(on_shutdown)
 session = aiohttp.ClientSession()
@@ -208,9 +210,17 @@ async def echoWS():
 async def engage():
     print("Starting...")
     app.add_routes(routes)
+    subapp.add_routes(subroutes)
+    app.add_domain('discord.drawn.actor', subapp)
+
+    ssl_context = ssl.create_default_context(ssl.Purpose.CLIENT_AUTH)
+    ssl_context.load_cert_chain(r'C:\Certbot\live\max.drawn.actor\fullchain.pem', r'C:\Certbot\live\max.drawn.actor\privkey.pem')
 
     loop = asyncio.get_event_loop()
+    # loop.create_task(aiohttp.web._run_app(app, port=config.get(query.name == 'callback')['port'], print=None))
+    # loop.create_task(aiohttp.web._run_app(subapp, port=config.get(query.name == 'callback')['port'], print=None))
     loop.create_task(aiohttp.web._run_app(app, port=config.get(query.name == 'callback')['port'], print=None))
+    loop.create_task(aiohttp.web._run_app(app, port='443', print=None, ssl_context=ssl_context))
 
 
 
@@ -234,7 +244,11 @@ async def engage():
 #   ##                                                                
 # ---------- EVENTS -----------------------------------------------------------------------------------------------------------
 
-
+@subroutes.get('/')
+async def discordLinkRedirect(request):
+    print('Redirecting to discord invite!')
+    raise aiohttp.web.HTTPTemporaryRedirect("https://discord.com/invite/M4FdEDf")
+    return aiohttp.web.Response(status=404)
 
 @routes.get('/spotify/auth/{discordGuild}')
 async def spotifyAuth(request):
