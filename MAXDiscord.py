@@ -467,7 +467,7 @@ def configNewGuilds():
             # if we couldn't find a channel everyone can speak in, then fall back to finding the first channel our bot can speak in (should be the very first channel as an admin, not ideal but necessary for a default config)
             if not defaultChannel:
                 for channel in guild.text_channels:
-                    channelPermissions = channel.permissions_for(bot.user)
+                    channelPermissions = channel.permissions_for(guild.me)
                     if channelPermissions.send_messages == True:
                         defaultChannel = channel
                         break
