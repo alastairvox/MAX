@@ -763,6 +763,10 @@ async def on_raw_reaction_add(payload):
                     ctx.guild = roleGuild
                     converter = discord.ext.commands.RoleConverter()
                     role = await converter.convert(ctx, role)
+                    for memberRole in roleMember.roles:
+                        if memberRole == role:
+                            await on_raw_reaction_remove(payload)
+                            return
                     print('Giving self-assign role "' + str(role) + '" to user ' + str(roleMember) + ' (' + str(roleMember.id) + ') on server "' + str(roleGuild) + '".')
                     await roleMember.add_roles(role)
                     break
@@ -787,6 +791,13 @@ async def on_raw_reaction_remove(payload):
                     ctx.guild = roleGuild
                     converter = discord.ext.commands.RoleConverter()
                     role = await converter.convert(ctx, role)
+                    foundRole = False
+                    for memberRole in roleMember.roles:
+                        if memberRole == role:
+                            foundRole = True
+                    if foundRole == False:
+                        await on_raw_reaction_add(payload)
+                        return
                     print('Removing self-assign role "' + str(role) + '" from user ' + str(roleMember) + ' (' + str(roleMember.id) + ') on server "' + str(roleGuild) + '".')
                     await roleMember.remove_roles(role)
                     break
