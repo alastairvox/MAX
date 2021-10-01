@@ -764,15 +764,18 @@ async def on_raw_reaction_add(payload):
                     converter = discord.ext.commands.RoleConverter()
                     role = await converter.convert(ctx, role)
                     # loop through each role the member already has
+                    foundRole = False
                     for memberRole in roleMember.roles:
                         # if one of the roles matches the role we are going to add (they already have the role)
                         if memberRole == role:
                             # then we will instead remove the reaction
+                            foundRole = True
                             print('Removing self-assign role "' + str(role) + '" from user ' + str(roleMember) + ' (' + str(roleMember.id) + ') on server "' + str(roleGuild) + '".')
                             await roleMember.remove_roles(role)
                             break
-                    print('Giving self-assign role "' + str(role) + '" to user ' + str(roleMember) + ' (' + str(roleMember.id) + ') on server "' + str(roleGuild) + '".')
-                    await roleMember.add_roles(role)
+                    if not foundRole:
+                        print('Giving self-assign role "' + str(role) + '" to user ' + str(roleMember) + ' (' + str(roleMember.id) + ') on server "' + str(roleGuild) + '".')
+                        await roleMember.add_roles(role)
                     break
     return
 
@@ -799,14 +802,13 @@ async def on_raw_reaction_remove(payload):
                     for memberRole in roleMember.roles:
                         if memberRole == role:
                             foundRole = True
-                    if foundRole == False:
+                            print('Removing self-assign role "' + str(role) + '" from user ' + str(roleMember) + ' (' + str(roleMember.id) + ') on server "' + str(roleGuild) + '".')
+                            await roleMember.remove_roles(role)
+                            break
+                    if not foundRole:
                         print('Giving self-assign role "' + str(role) + '" to user ' + str(roleMember) + ' (' + str(roleMember.id) + ') on server "' + str(roleGuild) + '".')
                         await roleMember.add_roles(role)
-                        break
-                    else:
-                        print('Removing self-assign role "' + str(role) + '" from user ' + str(roleMember) + ' (' + str(roleMember.id) + ') on server "' + str(roleGuild) + '".')
-                        await roleMember.remove_roles(role)
-                        break
+                    break
     return
 
 @bot.event
