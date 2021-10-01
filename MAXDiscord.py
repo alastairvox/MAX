@@ -758,7 +758,7 @@ async def on_raw_reaction_add(payload):
             roleMessage = await roleChannel.fetch_message(payload.message_id)
             existingRoles = await getSelfAssignRoles(roleMessage)
             for role, emoji in existingRoles.items():
-                if str(payload.emoji) == emoji:
+                if str(payload.emoji) == emoji or str(payload.emoji)[:1] + 'a' + str(payload.emoji)[1:] == emoji:
                     ctx = await createFakeContext()
                     ctx.guild = roleGuild
                     converter = discord.ext.commands.RoleConverter()
@@ -770,11 +770,11 @@ async def on_raw_reaction_add(payload):
                         if memberRole == role:
                             # then we will instead remove the reaction
                             foundRole = True
-                            print('Removing self-assign role "' + str(role) + '" from user ' + str(roleMember) + ' (' + str(roleMember.id) + ') on server "' + str(roleGuild) + '".')
+                            print('Reaction added - Removing self-assign role "' + str(role) + '" from user ' + str(roleMember) + ' (' + str(roleMember.id) + ') on server "' + str(roleGuild) + '".')
                             await roleMember.remove_roles(role)
                             break
                     if not foundRole:
-                        print('Giving self-assign role "' + str(role) + '" to user ' + str(roleMember) + ' (' + str(roleMember.id) + ') on server "' + str(roleGuild) + '".')
+                        print('Reaction added - Giving self-assign role "' + str(role) + '" to user ' + str(roleMember) + ' (' + str(roleMember.id) + ') on server "' + str(roleGuild) + '".')
                         await roleMember.add_roles(role)
                     break
     return
@@ -793,7 +793,8 @@ async def on_raw_reaction_remove(payload):
             roleMessage = await roleChannel.fetch_message(payload.message_id)
             existingRoles = await getSelfAssignRoles(roleMessage)
             for role, emoji in existingRoles.items():
-                if str(payload.emoji) == emoji:
+                print(role, emoji)
+                if str(payload.emoji) == emoji or str(payload.emoji)[:1] + 'a' + str(payload.emoji)[1:] == emoji:
                     ctx = await createFakeContext()
                     ctx.guild = roleGuild
                     converter = discord.ext.commands.RoleConverter()
@@ -802,11 +803,11 @@ async def on_raw_reaction_remove(payload):
                     for memberRole in roleMember.roles:
                         if memberRole == role:
                             foundRole = True
-                            print('Removing self-assign role "' + str(role) + '" from user ' + str(roleMember) + ' (' + str(roleMember.id) + ') on server "' + str(roleGuild) + '".')
+                            print('Reaction removed - Removing self-assign role "' + str(role) + '" from user ' + str(roleMember) + ' (' + str(roleMember.id) + ') on server "' + str(roleGuild) + '".')
                             await roleMember.remove_roles(role)
                             break
                     if not foundRole:
-                        print('Giving self-assign role "' + str(role) + '" to user ' + str(roleMember) + ' (' + str(roleMember.id) + ') on server "' + str(roleGuild) + '".')
+                        print('Reaction removed - Giving self-assign role "' + str(role) + '" to user ' + str(roleMember) + ' (' + str(roleMember.id) + ') on server "' + str(roleGuild) + '".')
                         await roleMember.add_roles(role)
                     break
     return
