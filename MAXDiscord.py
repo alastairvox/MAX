@@ -922,16 +922,18 @@ async def youtubetogether(ctx, application, *, voiceChannel):
         converter = discord.ext.commands.VoiceChannelConverter()
         voiceChannel = await converter.convert(ctx, voiceChannel.strip())
 
-        activities = {'youtube': ['755600276941176913', 'Youtube Together'], 'poker': ['755827207812677713', 'Poker Night'], 'betrayal': ['773336526917861400', 'Betrayal.io'], 'fishington': ['814288819477020702', 'Fishington.io']}
+        # 'youtube': ['755600276941176913', 'Youtube Together']
+
+        activities = {'youtube': ['880218394199220334', 'Youtube Together'], 'youtubedev': ['880218832743055411', 'Youtube Together Dev'], 'poker': ['755827207812677713', 'Poker Night'], 'betrayal': ['773336526917861400', 'Betrayal.io'], 'fishington': ['814288819477020702', 'Fishington.io'], 'chess': ['832012774040141894', 'Chess'], 'chessdev': ['832012586023256104', 'Chess Dev'],'lettertile': ['879863686565621790', 'Letter Tile'], 'wordsnack': ['879863976006127627', 'Word Snack'], 'doodlecrew': ['878067389634314250', 'Doodle Crew'], 'awkword': ['879863881349087252', 'Awkword'], 'spellcast': ['852509694341283871', 'Spellcast'], 'checkers': ['832013003968348200', 'Checkers'], 'puttparty': ['763133495793942528', 'Putt Party']}
 
         if application:
             application = application.strip().lower()
             if application in activities:
                 inviteID = await MAXServer.createYouTubeTogether(voiceChannel.id, activities[application][0])
             else:
-                return await ctx.send("The only applications I recognize are 'youtube', 'poker', 'betrayal', and 'fishington'. Try again, peas-for-brains.")
+                return await ctx.send("The only applications I recognize are" + activities.keys() + ". Try again, peas-for-brains.")
         else:
-            return await ctx.send("You must specify what application you want to start: 'youtube', 'poker', 'betrayal', and 'fishington' all work.")
+            return await ctx.send("You must specify what application you want to start: " + activities.keys() + " all work.")
 
         if inviteID:
             return await ctx.send("Click here to start **" + activities[application][1] + "** in " + voiceChannel.name + ": <https://discord.gg/" + inviteID + ">")
