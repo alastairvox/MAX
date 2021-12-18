@@ -917,7 +917,7 @@ async def on_member_join(member):
 
 
 
-@bot.command(name='together', rest_is_raw=True, help="""Turn a voice channel into a YouTube Together session (or specify 'Poker', 'Betrayal', or 'Fishington' for a different application)!""")
+@bot.command(name='together', rest_is_raw=True, help="""Turn a voice channel into a YouTube Together session (or specify a different application)!""")
 async def youtubetogether(ctx, application, *, voiceChannel):
         converter = discord.ext.commands.VoiceChannelConverter()
         voiceChannel = await converter.convert(ctx, voiceChannel.strip())
@@ -931,9 +931,9 @@ async def youtubetogether(ctx, application, *, voiceChannel):
             if application in activities:
                 inviteID = await MAXServer.createYouTubeTogether(voiceChannel.id, activities[application][0])
             else:
-                return await ctx.send("The only applications I recognize are" + activities.keys() + ". Try again, peas-for-brains.")
+                return await ctx.send("The only applications I recognize are: " + ', '.join(activities.keys()) + ". Try again, peas-for-brains.")
         else:
-            return await ctx.send("You must specify what application you want to start: " + activities.keys() + " all work.")
+            return await ctx.send("You must specify what application you want to start: " ', '.join(activities.keys()) + " all work.")
 
         if inviteID:
             return await ctx.send("Click here to start **" + activities[application][1] + "** in " + voiceChannel.name + ": <https://discord.gg/" + inviteID + ">")
