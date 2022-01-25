@@ -924,7 +924,22 @@ async def youtubetogether(ctx, application, *, voiceChannel):
 
         # 'youtube': ['755600276941176913', 'Youtube Together']
 
-        activities = {'youtube': ['880218394199220334', 'Youtube Together'], 'youtubedev': ['880218832743055411', 'Youtube Together Dev'], 'poker': ['755827207812677713', 'Poker Night'], 'betrayal': ['773336526917861400', 'Betrayal.io'], 'fishington': ['814288819477020702', 'Fishington.io'], 'chess': ['832012774040141894', 'Chess'], 'chessdev': ['832012586023256104', 'Chess Dev'],'lettertile': ['879863686565621790', 'Letter Tile'], 'wordsnack': ['879863976006127627', 'Word Snack'], 'doodlecrew': ['878067389634314250', 'Doodle Crew'], 'awkword': ['879863881349087252', 'Awkword'], 'spellcast': ['852509694341283871', 'Spellcast'], 'checkers': ['832013003968348200', 'Checkers'], 'puttparty': ['763133495793942528', 'Putt Party']}
+        activities = {'youtube': ['880218394199220334', 'Youtube Together'],
+        'youtubedev': ['880218832743055411', 'Youtube Together Dev'],
+        'poker': ['755827207812677713', 'Poker Night'],
+        'betrayal': ['773336526917861400', 'Betrayal.io'],
+        'fishington': ['814288819477020702', 'Fishington.io'],
+        'chess': ['832012774040141894', 'Chess'],
+        'chessdev': ['832012586023256104', 'Chess Dev'],
+        'lettertile': ['879863686565621790', 'Letter Tile'],
+        'wordsnack': ['879863976006127627', 'Word Snack'],
+        'doodlecrew': ['878067389634314250', 'Doodle Crew'],
+        'awkword': ['879863881349087252', 'Awkword'],
+        'spellcast': ['852509694341283871', 'Spellcast'],
+        'checkers': ['832013003968348200', 'Checkers'],
+        'puttparty': ['763133495793942528', 'Putt Party'],
+        'sketchheads': ['902271654783242291', 'Sketch Heads'],
+        'ocho': ['832025144389533716', 'Ocho']}
 
         if application:
             application = application.strip().lower()
